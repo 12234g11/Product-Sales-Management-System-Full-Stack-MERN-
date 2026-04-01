@@ -1,0 +1,30 @@
+POST /api/products          → إضافة منتج
+GET /api/products           → عرض كل المنتجات
+GET /api/products/low-stock → المنتجات اللي قربت تخلص
+PUT /api/products/:id       → تعديل منتج
+GET /api/products/search?id=123&name=oil&category=motor -> بحث
+DELETE /api/products/:id    → حذف منتج
+GET /api/products/auto-complete?query=oil -> يجيب اول 10 منتجات ك اقتراح لما اليوزر يكتب حرف من اسم المنتج
+GET /api/products/auto-fill?id=P001 -> يرجع المنتج لما ابعتله id و name
+-----------------------------------------------------------
+POST /api/sales            → عملية بيع
+GET /api/sales             → سجل المبيعات
+GET /api/sales/today       → مبيعات اليوم
+DELETE /api/sales/:saleId  -> مسح عملية بيع
+GET /api/sales/search?id=123&name=oil&category=motor&date=2025-12-05&startDate=2025-12-01&endDate=2025-12-10 -> بحث في المبيعات
+-----------------------------------------------------------
+POST /api/auth/register -> SignUp
+POST /api/auth/login -> login
+POST /api/auth/logout -> logout
+-----------------------------------------------------------
+DELETE /api/workspaces/deleteworkspace  
+-----------------------------------------------------------
+// Admin only
+POST /api/users -> انشاء مستخدم داخل الورك سبيس
+GET /api/users -> كل مستخدمين الورك سبيس اللي انا جواها
+DELETE /api/users -> مسح يوزر من الورك سبيس
+-----------------------------------------------------------
+GET /api/dashboard/charts/sales-trend?days=30 -> sales graph
+GET /api/dashboard/charts/stock-status?lowThreshold=3 -> low stock graph
+GET /api/dashboard/overview?lowThreshold=3 -> overview 
+

@@ -1,0 +1,1361 @@
+openapi: 3.0.3
+info:
+  title: Product Management System API
+  version: "1.0.0"
+  description: |
+    Backend API for a multi-workspace Product Management System (MERN).
+    Response format follows a JSend-like structure:
+    - Success: { status: "success", data: ... }
+    - Fail:    { status: "fail", data: ... }
+    - Error:   { status: "error", message: "..." }
+
+servers:
+  - url: http://localhost:5001
+
+tags:
+  - name: Auth
+  - name: Products
+  - name: Sales
+  - name: Dashboard
+  - name: Users
+  - name: Workspaces
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    MongoId:
+      type: string
+      description: MongoDB ObjectId
+      pattern: "^[a-fA-F0-9]{24}$"
+      example: "65c8d2f8a1b2c3d4e5f67890"
+
+    JSendSuccess:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [success]
+        data:
+          type: object
+          description: Payload for successful responses
+
+    JSendFail:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [fail]
+        data:
+          type: object
+          description: Validation/business errors (field map or message)
+
+    JSendError:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        message:
+          type: string
+
+    AuthRegisterRequest:
+      type: object
+      required: [workspaceName, name, email, password]
+      properties:
+        workspaceName:
+          type: string
+          example: "My Store"
+        name:
+          type: string
+          example: "Admin"
+        email:
+          type: string
+          format: email
+          example: "admin@mail.com"
+        password:
+          type: string
+          minLength: 6
+          example: "123456"
+
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "admin@mail.com"
+        password:
+          type: string
+          example: "123456"
+
+    AuthUser:
+      type: object
+      required: [id, name, email, role, workspaceId]
+      properties:
+        id:
+          $ref: "#/components/schemas/MongoId"
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, user]
+        workspaceId:
+          $ref: "#/components/schemas/MongoId"
+
+    WorkspacePublic:
+      type: object
+      required: [id, name, ownerUserId]
+      properties:
+        id:
+          $ref: "#/components/schemas/MongoId"
+        name:
+          type: string
+        ownerUserId:
+          $ref: "#/components/schemas/MongoId"
+
+    ProductPublic:
+      type: object
+      description: |
+        Product object returned by the API. The route parameter `{id}` refers to the business product id (Product.id),
+        not the MongoDB `_id`.
+      properties:
+        _id:
+          $ref: "#/components/schemas/MongoId"
+          description: MongoDB document id (may be omitted by the API clean() util)
+        id:
+          type: string
+          description: Business product id (unique per workspace)
+          example: "P001"
+        name:
+          type: string
+          example: "Oil"
+        category:
+          type: string
+          example: "motor"
+        purchasePrice:
+          type: number
+          example: 50
+        salePrice:
+          type: number
+          example: 70
+        quantity:
+          type: integer
+          minimum: 0
+          example: 20
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProductCreateRequest:
+      type: object
+      required: [id, name, category, purchasePrice, salePrice, quantity]
+      properties:
+        id:
+          type: string
+          example: "P001"
+        name:
+          type: string
+          example: "Oil"
+        category:
+          type: string
+          example: "motor"
+        purchasePrice:
+          type: number
+          minimum: 0
+          example: 50
+        salePrice:
+          type: number
+          minimum: 0
+          example: 70
+        quantity:
+          type: integer
+          minimum: 0
+          example: 20
+        createdAt:
+          type: string
+          format: date-time
+          description: Optional. If not provided, server timestamps are used.
+
+    ProductUpdateRequest:
+      type: object
+      description: Any subset of product fields. If `id` is changed, the new id must be unique in the same workspace.
+      properties:
+        id:
+          type: string
+          example: "P002"
+        name:
+          type: string
+        category:
+          type: string
+        purchasePrice:
+          type: number
+          minimum: 0
+        salePrice:
+          type: number
+          minimum: 0
+        quantity:
+          type: integer
+          minimum: 0
+
+    SalePublic:
+      type: object
+      properties:
+        _id:
+          $ref: "#/components/schemas/MongoId"
+        workspaceId:
+          $ref: "#/components/schemas/MongoId"
+          description: May be omitted by the API clean() util
+        createdByUserId:
+          $ref: "#/components/schemas/MongoId"
+          description: User who created the sale (may be null)
+        id:
+          type: string
+          description: Product id (business id)
+          example: "P001"
+        name:
+          type: string
+          example: "Oil"
+        category:
+          type: string
+          example: "motor"
+        salePrice:
+          type: number
+          example: 70
+        quantity:
+          type: integer
+          example: 2
+        totalPrice:
+          type: number
+          example: 140
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SaleCreateRequest:
+      type: object
+      description: |
+        Allowed fields are ONLY: id, name, quantity, salePrice.
+        You must send `id` or `name`. If `salePrice` is provided, it must match the product's current salePrice.
+      required: [quantity]
+      properties:
+        id:
+          type: string
+          description: Product id (preferred to avoid duplicate-name ambiguity)
+          example: "P001"
+        name:
+          type: string
+          description: Exact product name (case-insensitive). If multiple products share the name, the API returns 409 with candidates.
+          example: "Oil"
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+        salePrice:
+          type: number
+          description: Optional; if sent must equal the product salePrice
+          example: 70
+
+    UserCreateRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          example: "Ahmed"
+        email:
+          type: string
+          format: email
+          example: "ahmed@mail.com"
+        password:
+          type: string
+          minLength: 6
+          example: "123456"
+        role:
+          type: string
+          enum: [admin, user]
+          default: user
+          example: "user"
+
+    UserPublic:
+      type: object
+      properties:
+        _id:
+          $ref: "#/components/schemas/MongoId"
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, user]
+        status:
+          type: string
+          enum: [active, disabled]
+        workspaceId:
+          $ref: "#/components/schemas/MongoId"
+        createdAt:
+          type: string
+          format: date-time
+
+    DashboardSalesTrendPoint:
+      type: object
+      properties:
+        label:
+          type: string
+          description: "YYYY-MM-DD"
+          example: "2026-02-17"
+        revenue:
+          type: number
+          example: 560
+        orders:
+          type: integer
+          example: 8
+
+    DashboardStockStatusPoint:
+      type: object
+      properties:
+        label:
+          type: string
+          example: "In Stock"
+        value:
+          type: integer
+          example: 12
+
+paths:
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register (Create workspace + admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRegisterRequest"
+      responses:
+        "201":
+          description: Workspace + admin created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      user:
+                        $ref: "#/components/schemas/AuthUser"
+                      workspace:
+                        $ref: "#/components/schemas/WorkspacePublic"
+              examples:
+                ok:
+                  value:
+                    status: success
+                    data:
+                      token: "JWT..."
+                      user:
+                        id: "65c8d2f8a1b2c3d4e5f67890"
+                        name: "Admin"
+                        email: "admin@mail.com"
+                        role: "admin"
+                        workspaceId: "65c8d2f8a1b2c3d4e5f67891"
+                      workspace:
+                        id: "65c8d2f8a1b2c3d4e5f67891"
+                        name: "My Store"
+                        ownerUserId: "65c8d2f8a1b2c3d4e5f67890"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+              examples:
+                missingFields:
+                  value:
+                    status: error
+                    message: "workspaceName, name, email, password are required"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+              examples:
+                exists:
+                  value:
+                    status: error
+                    message: "Email already exists"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthLoginRequest"
+      responses:
+        "200":
+          description: Logged in successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      user:
+                        $ref: "#/components/schemas/AuthUser"
+        "400":
+          description: Missing email/password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+        "403":
+          description: User disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (invalidate existing tokens)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Logged out successfully"
+        "401":
+          description: Unauthorized (missing/invalid token)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+  /api/products:
+    get:
+      tags: [Products]
+      summary: Get all products (current workspace)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Products list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductPublic"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+    post:
+      tags: [Products]
+      summary: Create product (current workspace)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCreateRequest"
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    $ref: "#/components/schemas/ProductPublic"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "409":
+          description: Product id already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/products/low-stock:
+    get:
+      tags: [Products]
+      summary: Get low stock products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: threshold
+          schema:
+            type: integer
+            minimum: 1
+            default: 3
+          description: Return products with quantity < threshold
+      responses:
+        "200":
+          description: Low stock products
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductPublic"
+
+  /api/products/{id}:
+    put:
+      tags: [Products]
+      summary: Update product by business id
+      description: Path parameter `{id}` refers to Product.id (business id), not Mongo `_id`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          example: "P001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdateRequest"
+      responses:
+        "200":
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    $ref: "#/components/schemas/ProductPublic"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "409":
+          description: New product id already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+    delete:
+      tags: [Products]
+      summary: Delete product by business id
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          example: "P001"
+      responses:
+        "200":
+          description: Product deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Product deleted successfully"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/products/search:
+    get:
+      tags: [Products]
+      summary: Search products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: id
+          schema: { type: string }
+          description: Partial match (case-insensitive)
+        - in: query
+          name: name
+          schema: { type: string }
+          description: Partial match (case-insensitive)
+        - in: query
+          name: category
+          schema: { type: string }
+          description: Partial match (case-insensitive)
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductPublic"
+
+  /api/products/auto-complete:
+    get:
+      tags: [Products]
+      summary: Auto-complete products (by id or name)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+          description: If missing, API returns an empty array
+      responses:
+        "200":
+          description: Suggestions (max 10)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductPublic"
+
+  /api/products/auto-fill:
+    get:
+      tags: [Products]
+      summary: Auto-fill product by id or exact name
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: id
+          schema: { type: string }
+          description: Business product id
+        - in: query
+          name: name
+          schema: { type: string }
+          description: Exact name (case-insensitive). If duplicates exist, returns 409 with candidates.
+      responses:
+        "200":
+          description: Product found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    $ref: "#/components/schemas/ProductPublic"
+        "400":
+          description: Missing id/name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "409":
+          description: Multiple products share the same name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/sales:
+    get:
+      tags: [Sales]
+      summary: Get sales history (current workspace)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sales list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SalePublic"
+
+    post:
+      tags: [Sales]
+      summary: Create a sale (and decrement product stock)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleCreateRequest"
+      responses:
+        "201":
+          description: Sale created and stock updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    $ref: "#/components/schemas/SalePublic"
+        "400":
+          description: Validation/business rules error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "409":
+          description: Multiple products share the same name (choose by id)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/sales/today:
+    get:
+      tags: [Sales]
+      summary: Get today's sales (current workspace)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Today's sales
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SalePublic"
+
+  /api/sales/{saleId}:
+    delete:
+      tags: [Sales]
+      summary: Delete a sale (and revert stock)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: saleId
+          required: true
+          schema:
+            $ref: "#/components/schemas/MongoId"
+      responses:
+        "200":
+          description: Sale deleted and stock restored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Sale deleted and stock updated"
+                      updatedProduct:
+                        $ref: "#/components/schemas/ProductPublic"
+        "404":
+          description: Sale or product not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/sales/search:
+    get:
+      tags: [Sales]
+      summary: Search sales
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: id
+          schema: { type: string }
+          description: Product id partial match
+        - in: query
+          name: name
+          schema: { type: string }
+          description: Product name partial match
+        - in: query
+          name: category
+          schema: { type: string }
+          description: Category partial match
+        - in: query
+          name: date
+          schema: { type: string, example: "2026-02-17" }
+          description: Filter by a single day (YYYY-MM-DD)
+        - in: query
+          name: startDate
+          schema: { type: string, example: "2026-02-01" }
+          description: Range start day (YYYY-MM-DD). Must be used with endDate.
+        - in: query
+          name: endDate
+          schema: { type: string, example: "2026-02-17" }
+          description: Range end day (YYYY-MM-DD). Must be used with startDate.
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SalePublic"
+
+  /api/dashboard/charts/sales-trend:
+    get:
+      tags: [Dashboard]
+      summary: Sales trend chart (Admin only)
+      description: |
+        Returns revenue + orders per day for the last N days.
+        Note: current implementation aggregates across all workspaces (no workspace filter).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            default: 30
+      responses:
+        "200":
+          description: Trend series
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      series:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/DashboardSalesTrendPoint"
+                      from:
+                        type: string
+                        format: date-time
+                      to:
+                        type: string
+                        format: date-time
+        "403":
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+  /api/dashboard/charts/stock-status:
+    get:
+      tags: [Dashboard]
+      summary: Stock status chart (Admin only)
+      description: |
+        Returns counts of Out of Stock / Low Stock / In Stock products.
+        Note: current implementation aggregates across all workspaces (no workspace filter).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: lowThreshold
+          schema:
+            type: integer
+            minimum: 1
+            default: 3
+      responses:
+        "200":
+          description: Stock status series
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      series:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/DashboardStockStatusPoint"
+                      threshold:
+                        type: integer
+        "403":
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+  /api/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard overview (Admin only)
+      description: |
+        Inventory + today's sales summary.
+        Note: current implementation aggregates across all workspaces (no workspace filter).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: lowThreshold
+          schema:
+            type: integer
+            minimum: 1
+            default: 3
+      responses:
+        "200":
+          description: Overview metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      productsCount: { type: integer }
+                      totalStockUnits: { type: integer }
+                      inventoryPurchaseValue: { type: number }
+                      inventorySaleValue: { type: number }
+                      potentialProfit: { type: number }
+                      lowStockCount: { type: integer }
+                      outOfStockCount: { type: integer }
+                      todaySalesCount: { type: integer }
+                      todayRevenue: { type: number }
+                      threshold: { type: integer }
+        "403":
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+  /api/users:
+    get:
+      tags: [Users]
+      summary: Get users in the current workspace (Admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      ownerUserId:
+                        $ref: "#/components/schemas/MongoId"
+                      count:
+                        type: integer
+                      users:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/UserPublic"
+        "403":
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+
+    post:
+      tags: [Users]
+      summary: Create user in current workspace (Admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreateRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/UserPublic"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/users/{id}/status:
+    patch:
+      tags: [Users]
+      summary: Update user status (enable/disable) (Admin only)
+      description: |
+        Updates the user status to "active" or "disabled".
+        Rules:
+        - You cannot change your own status.
+        - You cannot change the workspace owner status.
+        - You cannot disable the last active admin in the workspace.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            $ref: "#/components/schemas/MongoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, disabled]
+            examples:
+              disable:
+                value:
+                  status: disabled
+              enable:
+                value:
+                  status: active
+      responses:
+        "200":
+          description: User status updated (or already in the same status)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+        "400":
+          description: Business rule / validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "403":
+          description: User is not in your workspace / not admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: User/workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/users/{id}:
+    delete:
+      tags: [Users]
+      summary: Delete a user permanently (Admin only)
+      description: |
+        Permanently deletes the user document from the database.
+        Rules:
+        - You cannot delete your own account.
+        - You cannot delete the workspace owner.
+        - You cannot delete the last active admin in the workspace.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            $ref: "#/components/schemas/MongoId"
+      responses:
+        "200":
+          description: User deleted permanently
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+        "400":
+          description: Business rule error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "403":
+          description: User is not in your workspace / not admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+        "404":
+          description: User/workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendFail"
+
+  /api/workspaces/deleteworkspace:
+    delete:
+      tags: [Workspaces]
+      summary: Delete my workspace permanently (Admin + Owner only)
+      description: |
+        Permanently deletes:
+        1) Sales
+        2) Products
+        3) Users
+        4) Workspace
+        Only the workspace owner (ownerUserId) can delete the workspace.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, data]
+                properties:
+                  status:
+                    type: string
+                    enum: [success]
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Workspace deleted permanently"
+        "403":
+          description: Only workspace owner can delete it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
+        "404":
+          description: Workspace not found for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JSendError"
