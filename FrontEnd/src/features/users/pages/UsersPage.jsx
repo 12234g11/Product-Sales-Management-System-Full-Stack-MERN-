@@ -10,6 +10,20 @@ function formatDate(d) {
   }
 }
 
+function formatPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0%";
+
+  try {
+    return `${new Intl.NumberFormat("ar-EG", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(n)}%`;
+  } catch {
+    return `${n}%`;
+  }
+}
+
 function roleLabel(role) {
   return role === "admin" ? "مدير" : "عامل";
 }
@@ -97,6 +111,107 @@ function UserFormModal({ show, busy, onClose, onSubmit }) {
                 </button>
                 <button className="btn btn-primary" disabled={busy}>
                   {busy ? "جاري الإضافة..." : "إضافة"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-backdrop fade show" onClick={onClose} />
+    </>
+  );
+}
+
+function DiscountLimitsModal({ show, busy, user, onClose, onSubmit }) {
+  const [form, setForm] = useState({
+    maxItemDiscountPercent: "0",
+    maxInvoiceDiscountPercent: "0",
+  });
+
+  useEffect(() => {
+    if (show) {
+      setForm({
+        maxItemDiscountPercent: String(user?.maxItemDiscountPercent ?? 0),
+        maxInvoiceDiscountPercent: String(user?.maxInvoiceDiscountPercent ?? 0),
+      });
+    }
+  }, [show, user]);
+
+  if (!show) return null;
+
+  return (
+    <>
+      <div className="modal fade show" style={{ display: "block" }} tabIndex="-1" aria-modal="true" role="dialog">
+        <div className="modal-dialog modal-fullscreen-sm-down" role="document">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">تحديد حدود الخصم</h5>
+              <button className="btn-close ms-0 me-auto" onClick={onClose} aria-label="Close" />
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onSubmit({
+                  maxItemDiscountPercent: Number(form.maxItemDiscountPercent),
+                  maxInvoiceDiscountPercent: Number(form.maxInvoiceDiscountPercent),
+                });
+              }}
+            >
+              <div className="modal-body d-grid gap-3">
+                <div className="alert alert-info mb-0">
+                  <div className="fw-semibold">{user?.name}</div>
+                  <div className="small mt-1">{user?.email}</div>
+                </div>
+
+                <div>
+                  <label className="form-label">الحد الأقصى لخصم الصنف (%)</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={form.maxItemDiscountPercent}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        maxItemDiscountPercent: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                  <div className="form-text">قيمة من 0 إلى 100.</div>
+                </div>
+
+                <div>
+                  <label className="form-label">الحد الأقصى لخصم الفاتورة (%)</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={form.maxInvoiceDiscountPercent}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        maxInvoiceDiscountPercent: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                  <div className="form-text">قيمة من 0 إلى 100.</div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline-secondary" onClick={onClose} disabled={busy}>
+                  إلغاء
+                </button>
+                <button className="btn btn-primary" disabled={busy}>
+                  {busy ? "جاري الحفظ..." : "حفظ الحدود"}
                 </button>
               </div>
             </form>
@@ -207,6 +322,7 @@ export default function UsersPage() {
   const [nextStatus, setNextStatus] = useState("disabled");
 
   const [showDelete, setShowDelete] = useState(false);
+  const [showDiscountLimits, setShowDiscountLimits] = useState(false);
 
   const [target, setTarget] = useState(null);
 
@@ -260,6 +376,11 @@ export default function UsersPage() {
     setShowDelete(true);
   };
 
+  const openDiscountLimitsModal = (u) => {
+    setTarget(u);
+    setShowDiscountLimits(true);
+  };
+
   const submitStatus = async () => {
     setBusy(true);
     setErr("");
@@ -270,6 +391,21 @@ export default function UsersPage() {
       await refresh();
     } catch (e) {
       setErr(e.userMessage || "فشل تغيير حالة المستخدم");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitDiscountLimits = async (payload) => {
+    setBusy(true);
+    setErr("");
+    try {
+      const id = target._id || target.id;
+      await usersApi.updateDiscountLimits(id, payload);
+      setShowDiscountLimits(false);
+      await refresh();
+    } catch (e) {
+      setErr(e.userMessage || "فشل تحديث حدود الخصم");
     } finally {
       setBusy(false);
     }
@@ -349,6 +485,8 @@ export default function UsersPage() {
                     <th className="text-end">الإيميل</th>
                     <th className="text-end">الدور</th>
                     <th className="text-end">الحالة</th>
+                    <th className="text-end">حد خصم الصنف</th>
+                    <th className="text-end">حد خصم الفاتورة</th>
                     <th className="text-end">تاريخ الإنشاء</th>
                     <th className="text-end"></th>
                   </tr>
@@ -366,7 +504,7 @@ export default function UsersPage() {
                         <td className="text-end">
                           <div className="fw-semibold">
                             {u.name}{" "}
-                            {isOwner && <span className="badge text-bg-info ms-2">Owner</span>}
+                            {isOwner && <span className="badge text-bg-info ms-2">المؤسس</span>}
                             {isMe && <span className="badge text-bg-secondary ms-2">أنت</span>}
                           </div>
                         </td>
@@ -385,10 +523,30 @@ export default function UsersPage() {
                           </span>
                         </td>
 
+                        <td className="text-end">
+                          <span className="badge text-bg-warning">
+                            {formatPercent(u.maxItemDiscountPercent)}
+                          </span>
+                        </td>
+
+                        <td className="text-end">
+                          <span className="badge text-bg-dark">
+                            {formatPercent(u.maxInvoiceDiscountPercent)}
+                          </span>
+                        </td>
+
                         <td className="text-end small text-secondary">{formatDate(u.createdAt)}</td>
 
                         <td className="text-end">
                           <div className="d-flex flex-row-reverse gap-2 justify-content-end flex-wrap flex-md-nowrap">
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              disabled={busy}
+                              onClick={() => openDiscountLimitsModal(u)}
+                            >
+                              حدود الخصم
+                            </button>
+
                             {isActive ? (
                               <button
                                 className="btn btn-sm btn-outline-danger"
@@ -427,6 +585,14 @@ export default function UsersPage() {
       </div>
 
       <UserFormModal show={showCreate} busy={busy} onClose={() => setShowCreate(false)} onSubmit={create} />
+
+      <DiscountLimitsModal
+        show={showDiscountLimits}
+        busy={busy}
+        user={target}
+        onClose={() => setShowDiscountLimits(false)}
+        onSubmit={submitDiscountLimits}
+      />
 
       <ConfirmStatusModal
         show={showStatus}

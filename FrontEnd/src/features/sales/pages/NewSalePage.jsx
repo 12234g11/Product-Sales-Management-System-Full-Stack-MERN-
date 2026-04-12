@@ -1,315 +1,358 @@
-import { useEffect, useMemo, useState } from "react";
-import { productsApi } from "../../products/api/productsApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import CreateReturnModal from "../components/CreateReturnModal";
+import InvoiceHeaderCard from "../components/InvoiceHeaderCard";
+import InvoiceItemsTable from "../components/InvoiceItemsTable";
+import InvoiceReturnsSection from "../components/InvoiceReturnsSection";
+import InvoiceTotalsPanel from "../components/InvoiceTotalsPanel";
+import ProductQuickAdd from "../components/ProductQuickAdd";
 import { salesApi } from "../api/salesApi";
-
-function formatNumber(n) {
-  return new Intl.NumberFormat("ar-EG").format(Number(n || 0));
-}
-
-function formatDateTime(d) {
-  try {
-    return new Intl.DateTimeFormat("ar-EG", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(d));
-  } catch {
-    return "";
-  }
-}
+import { canCreateReturn, isDraft, normalizeApiError } from "../utils/salesFormatters";
 
 export default function NewSalePage() {
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const navigate = useNavigate();
+  const { id: invoiceIdParam } = useParams();
+  const [searchParams] = useSearchParams();
 
-  const [suggestions, setSuggestions] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const invoiceIdFromQuery = searchParams.get("invoiceId") || "";
+  const activeInvoiceId = invoiceIdParam || invoiceIdFromQuery || "";
 
-  const [qty, setQty] = useState(1);
-  const [busy, setBusy] = useState(false);
+  const [draftForm, setDraftForm] = useState({ invoiceCode: "", name: "" });
+  const [invoice, setInvoice] = useState(null);
+  const [invoiceReturns, setInvoiceReturns] = useState({ invoice: null, returns: [] });
 
-  const [err, setErr] = useState("");
-  const [ok, setOk] = useState("");
+  const [loadingInvoice, setLoadingInvoice] = useState(false);
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [itemBusy, setItemBusy] = useState(false);
+  const [discountBusy, setDiscountBusy] = useState(false);
+  const [finalizeBusy, setFinalizeBusy] = useState(false);
+  const [returnBusy, setReturnBusy] = useState(false);
 
-  const [todaySales, setTodaySales] = useState([]);
-  const [loadingToday, setLoadingToday] = useState(true);
+  const [invoiceDiscountInput, setInvoiceDiscountInput] = useState(0);
+  const [showReturnModal, setShowReturnModal] = useState(false);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 250);
-    return () => clearTimeout(t);
-  }, [query]);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  // load suggestions
-  useEffect(() => {
-    let canceled = false;
-
-    async function run() {
-      setErr("");
-      setSuggestions([]);
-      if (!debounced) return;
-
-      try {
-        const res = await productsApi.autoComplete(debounced);
-        if (!canceled) setSuggestions(Array.isArray(res) ? res : []);
-      } catch (e) {
-        if (!canceled) setErr(e.userMessage || "فشل البحث عن المنتج");
-      }
-    }
-
-    run();
-    return () => {
-      canceled = true;
-    };
-  }, [debounced]);
-
-  const refreshToday = async () => {
-    setLoadingToday(true);
-    try {
-      const res = await salesApi.getToday();
-      setTodaySales(Array.isArray(res) ? res : []);
-    } catch (e) {
-    } finally {
-      setLoadingToday(false);
-    }
+  const clearFlash = () => {
+    setError("");
+    setSuccess("");
   };
 
-  useEffect(() => {
-    refreshToday();
+  const loadInvoice = useCallback(async (invoiceId) => {
+    if (!invoiceId) return;
+
+    setLoadingInvoice(true);
+    clearFlash();
+
+    try {
+      const data = await salesApi.getInvoice(invoiceId);
+      setInvoice(data);
+      setInvoiceDiscountInput(data?.invoiceDiscountPercent || 0);
+
+      try {
+        const returnsData = await salesApi.getInvoiceReturns(invoiceId);
+        setInvoiceReturns(returnsData || { invoice: null, returns: [] });
+      } catch {
+        setInvoiceReturns({ invoice: null, returns: [] });
+      }
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل تحميل الفاتورة"));
+    } finally {
+      setLoadingInvoice(false);
+    }
   }, []);
 
-  const maxQty = useMemo(() => Number(selected?.quantity || 0), [selected]);
-
-  const choose = async (p) => {
-    setSelected(p);
-    setQuery(`${p.name} (${p.id})`);
-    setSuggestions([]);
-    setQty(1);
-    setErr("");
-    setOk("");
-  };
-
-  const clearSelection = () => {
-    setSelected(null);
-    setQuery("");
-    setSuggestions([]);
-    setQty(1);
-    setErr("");
-    setOk("");
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr("");
-    setOk("");
-
-    if (!selected) {
-      setErr("اختار منتج الأول");
-      return;
+  useEffect(() => {
+    if (activeInvoiceId) {
+      loadInvoice(activeInvoiceId);
+    } else {
+      setInvoice(null);
+      setInvoiceReturns({ invoice: null, returns: [] });
+      setInvoiceDiscountInput(0);
     }
+  }, [activeInvoiceId, loadInvoice]);
 
-    const q = Number(qty);
-    if (!Number.isInteger(q) || q <= 0) {
-      setErr("الكمية لازم تكون رقم صحيح أكبر من 0");
-      return;
-    }
-    if (q > maxQty) {
-      setErr("الكمية المطلوبة أكبر من المتاح في المخزون");
-      return;
-    }
+  const syncInvoiceState = useCallback(
+    async (nextInvoice, message = "") => {
+      setInvoice(nextInvoice);
+      setInvoiceDiscountInput(nextInvoice?.invoiceDiscountPercent || 0);
 
-    setBusy(true);
-    try {
-      const sale = await salesApi.create({ id: selected.id, quantity: q });
+      if (message) setSuccess(message);
+
+      const id = nextInvoice?.id || nextInvoice?._id;
+      if (!id) return;
+
+      if (String(activeInvoiceId) !== String(id)) {
+        navigate(`/sales/${id}`, { replace: true });
+      }
+
       try {
-        const updated = await productsApi.autoFill({ id: selected.id });
-        setSelected(updated);
-      } catch (_) {}
+        const returnsData = await salesApi.getInvoiceReturns(id);
+        setInvoiceReturns(returnsData || { invoice: null, returns: [] });
+      } catch {
+        setInvoiceReturns({ invoice: nextInvoice, returns: [] });
+      }
+    },
+    [activeInvoiceId, navigate]
+  );
 
-      setOk(`تم تسجيل البيع بنجاح ✅ (الإجمالي: ${formatNumber(sale?.totalPrice)})`);
-      await refreshToday();
-      setQty(1);
-    } catch (e2) {
-      setErr(e2.userMessage || "فشل تسجيل البيع");
+  const onDraftChange = (e) => {
+    clearFlash();
+    setDraftForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleCreateDraft = async () => {
+    clearFlash();
+
+    if (!draftForm.invoiceCode.trim()) {
+      setError("كود الفاتورة إجباري");
+      return;
+    }
+
+    setCreatingDraft(true);
+    try {
+      const created = await salesApi.createDraft({
+        invoiceCode: draftForm.invoiceCode.trim(),
+        name: draftForm.name.trim(),
+      });
+      await syncInvoiceState(created, "تم إنشاء المسودة بنجاح");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل إنشاء المسودة"));
     } finally {
-      setBusy(false);
+      setCreatingDraft(false);
     }
   };
+
+  const handleAddItem = async ({ productId, quantity }) => {
+    if (!invoice?.id && !invoice?._id) {
+      setError("أنشئ مسودة أولاً");
+      return;
+    }
+
+    setItemBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.addItem(invoice.id || invoice._id, {
+        productId,
+        quantity,
+      });
+      await syncInvoiceState(updated, "تمت إضافة الصنف بنجاح");
+    } catch (err) {
+      const candidates = err?.response?.data?.data?.candidates;
+      if (Array.isArray(candidates) && candidates.length) {
+        const names = candidates.map((c) => `${c.name} (${c.id})`).join(" - ");
+        setError(`يوجد أكثر من صنف بنفس الاسم. اختر بالكود مباشرة: ${names}`);
+      } else {
+        setError(normalizeApiError(err, "فشل إضافة الصنف"));
+      }
+    } finally {
+      setItemBusy(false);
+    }
+  };
+
+  const handleUpdateQty = async (item, quantity) => {
+    setItemBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.updateItemQty(
+        invoice.id || invoice._id,
+        item._id || item.id,
+        quantity
+      );
+      await syncInvoiceState(updated, "تم تعديل الكمية");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل تعديل الكمية"));
+    } finally {
+      setItemBusy(false);
+    }
+  };
+
+  const handleApplyItemDiscount = async (item, value) => {
+    setItemBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.applyItemDiscount(
+        invoice.id || invoice._id,
+        item._id || item.id,
+        value
+      );
+      await syncInvoiceState(updated, "تم تطبيق خصم الصنف");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل تطبيق خصم الصنف"));
+    } finally {
+      setItemBusy(false);
+    }
+  };
+
+  const handleRemoveItem = async (item) => {
+    setItemBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.removeItem(
+        invoice.id || invoice._id,
+        item._id || item.id
+      );
+      await syncInvoiceState(updated, "تم حذف السطر");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل حذف الصنف"));
+    } finally {
+      setItemBusy(false);
+    }
+  };
+
+  const handleApplyInvoiceDiscount = async () => {
+    setDiscountBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.applyInvoiceDiscount(
+        invoice.id || invoice._id,
+        invoiceDiscountInput
+      );
+      await syncInvoiceState(updated, "تم تطبيق خصم الفاتورة");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل تطبيق خصم الفاتورة"));
+    } finally {
+      setDiscountBusy(false);
+    }
+  };
+
+  const handleFinalize = async () => {
+    setFinalizeBusy(true);
+    clearFlash();
+
+    try {
+      const updated = await salesApi.finalizeInvoice(invoice.id || invoice._id);
+      await syncInvoiceState(updated, "تم تأكيد البيع بنجاح");
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل تأكيد البيع"));
+    } finally {
+      setFinalizeBusy(false);
+    }
+  };
+
+  const handleCreateReturn = async (payload) => {
+    setReturnBusy(true);
+    clearFlash();
+
+    try {
+      await salesApi.createReturn(payload);
+      setShowReturnModal(false);
+      setSuccess("تم إنشاء المرتجع بنجاح");
+      await loadInvoice(invoice.id || invoice._id);
+    } catch (err) {
+      setError(normalizeApiError(err, "فشل إنشاء المرتجع"));
+    } finally {
+      setReturnBusy(false);
+    }
+  };
+
+  const busy =
+    creatingDraft || itemBusy || finalizeBusy || discountBusy || returnBusy;
+
+  const draftMode = isDraft(invoice);
+
+  const returnsData = useMemo(() => {
+    if (!invoice) return { invoice: null, returns: [] };
+
+    return {
+      invoice: invoiceReturns.invoice || invoice,
+      returns: invoiceReturns.returns || [],
+    };
+  }, [invoice, invoiceReturns]);
 
   return (
     <div className="container-fluid">
-      <div className="d-md-none mb-3">
-        <div className="mb-2">
-          <h3 className="m-0 text-white">بيع جديد</h3>
-          <div className="text-white small mt-2">اختار منتج وسجّل بيع سريع</div>
+      <div className="mb-3">
+        <h3 className="m-0 text-white">
+          {invoice ? `فاتورة بيع: ${invoice.invoiceCode}` : "فاتورة بيع جديدة"}
+        </h3>
+        <div className="text-white small mt-2">
+          إنشاء مسودة، إضافة الأصناف، تطبيق الخصومات، تأكيد البيع، ثم الطباعة والمرتجعات.
         </div>
-
-        <button className="btn btn-outline-secondary w-100" onClick={clearSelection}>
-          مسح
-        </button>
-      </div>
-      <div className="d-none d-md-flex flex-row-reverse justify-content-between align-items-center mb-3">
-        <div>
-          <h3 className="m-0 text-white">بيع جديد</h3>
-          <div className="text-white small mt-2">اختار منتج وسجّل بيع سريع</div>
-        </div>
-
-        <button className="btn btn-outline-secondary" onClick={clearSelection}>
-          مسح
-        </button>
       </div>
 
-      {err && <div className="alert alert-danger">{err}</div>}
-      {ok && <div className="alert alert-success">{ok}</div>}
+      {error && <div className="alert alert-danger">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
 
-      <div className="row g-3">
-        {/* Sale Form */}
-        <div className="col-12 col-lg-6">
-          <div className="card">
-            <div className="card-body">
-              <form onSubmit={submit} className="d-grid gap-3">
-                <div>
-                  <label className="form-label">بحث عن منتج (اسم أو كود)</label>
-                  <input
-                    className="form-control"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="مثال: P001 أو زيت"
-                    autoComplete="off"
-                  />
-
-                  {/* Suggestions */}
-                  {suggestions.length > 0 && (
-                    <div className="list-group mt-2">
-                      {suggestions.map((p) => (
-                        <button
-                          type="button"
-                          key={p.id}
-                          className="list-group-item list-group-item-action d-flex justify-content-between flex-row-reverse"
-                          onClick={() => choose(p)}
-                        >
-                          <div>
-                            <div className="fw-semibold">{p.name}</div>
-                            <div className="small text-secondary">
-                              {p.category} • كود: {p.id}
-                            </div>
-                          </div>
-                          <div className="text-end small">
-                            <div>المتاح: {formatNumber(p.quantity)}</div>
-                            <div>سعر البيع: {formatNumber(p.salePrice)}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Selected product info */}
-                {selected && (
-                  <div className="border rounded p-3 bg-body-tertiary">
-                    <div className="d-flex justify-content-between flex-row-reverse flex-wrap gap-2">
-                      <div>
-                        <div className="fw-bold">{selected.name}</div>
-                        <div className="small text-secondary">
-                          {selected.category} • كود: {selected.id}
-                        </div>
-                      </div>
-                      <div className="text-end">
-                        <div className="small text-secondary">سعر البيع</div>
-                        <div className="fw-bold">{formatNumber(selected.salePrice)}</div>
-                      </div>
-                    </div>
-
-                    <div className="d-flex justify-content-between flex-row-reverse flex-wrap gap-2 mt-2">
-                      <div className="small text-secondary">
-                        المتاح بالمخزون:{" "}
-                        <span className="fw-semibold">{formatNumber(selected.quantity)}</span>
-                      </div>
-                      <div className="small text-secondary">
-                        سعر الشراء: {formatNumber(selected.purchasePrice)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="row g-2 align-items-end">
-                  <div className="col-12 col-md-6">
-                    <label className="form-label">الكمية</label>
-                    <input
-                      className="form-control"
-                      type="number"
-                      min={1}
-                      value={qty}
-                      onChange={(e) => setQty(Number(e.target.value))}
-                      disabled={!selected}
-                    />
-                    {selected && <div className="form-text">الحد الأقصى: {formatNumber(maxQty)}</div>}
-                  </div>
-
-                  <div className="col-12 col-md-6">
-                    <button className="btn btn-primary w-100" disabled={busy || !selected}>
-                      {busy ? "جاري التسجيل..." : "تسجيل البيع"}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
+      {loadingInvoice ? (
+        <div className="card">
+          <div className="card-body text-center py-5">جاري تحميل الفاتورة...</div>
+        </div>
+      ) : (
+        <div className="row g-3">
+          <div className="col-12">
+            <InvoiceHeaderCard
+              draftForm={draftForm}
+              onDraftChange={onDraftChange}
+              onCreateDraft={handleCreateDraft}
+              invoice={invoice}
+              busy={busy}
+              creating={creatingDraft}
+            />
           </div>
-        </div>
 
-        <div className="col-12 col-lg-6">
-          <div className="card">
-            <div className="card-body">
-              <div className="d-md-none mb-2">
-                <div className="mb-2">
-                  <h5 className="m-0">مبيعات اليوم</h5>
-                </div>
-                <button className="btn btn-sm btn-outline-primary w-100" onClick={refreshToday}>
-                  تحديث
-                </button>
+          <div className="col-12 col-xl-8">
+            <div className="row g-3">
+              <div className="col-12">
+                <ProductQuickAdd
+                  disabled={!invoice || !draftMode}
+                  busy={itemBusy}
+                  onAdd={handleAddItem}
+                  onError={(msg) => setError(msg)}
+                />
               </div>
 
-              <div className="d-none d-md-flex flex-row-reverse justify-content-between align-items-center mb-2">
-                <h5 className="m-0">مبيعات اليوم</h5>
-                <button className="btn btn-sm btn-outline-primary" onClick={refreshToday}>
-                  تحديث
-                </button>
+              <div className="col-12">
+                <InvoiceItemsTable
+                  invoice={invoice}
+                  busy={itemBusy}
+                  onUpdateQty={handleUpdateQty}
+                  onApplyItemDiscount={handleApplyItemDiscount}
+                  onRemoveItem={handleRemoveItem}
+                />
               </div>
 
-              {loadingToday ? (
-                <div className="text-center py-4">جاري التحميل...</div>
-              ) : todaySales.length === 0 ? (
-                <div className="text-center py-4 text-secondary">لا توجد مبيعات اليوم</div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table table-sm align-middle text-nowrap">
-                    <thead>
-                      <tr>
-                        <th className="text-end">المنتج</th>
-                        <th className="text-end">الكمية</th>
-                        <th className="text-end">الإجمالي</th>
-                        <th className="text-end">الوقت</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {todaySales.slice(0, 10).map((s, idx) => (
-                        <tr key={(s.saleId || s._id || idx) + ""}>
-                          <td className="text-end">
-                            <div className="fw-semibold">{s.name}</div>
-                            <div className="small text-secondary">{s.id}</div>
-                          </td>
-                          <td className="text-end">{formatNumber(s.quantity)}</td>
-                          <td className="text-end">{formatNumber(s.totalPrice)}</td>
-                          <td className="text-end small text-secondary">{formatDateTime(s.createdAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {invoice && (
+                <div className="col-12">
+                  <InvoiceReturnsSection
+                    data={returnsData}
+                    onOpenCreateReturn={() => setShowReturnModal(true)}
+                    canCreateReturn={canCreateReturn(invoice)}
+                  />
                 </div>
               )}
-
             </div>
           </div>
+
+          <div className="col-12 col-xl-4">
+            <InvoiceTotalsPanel
+              invoice={invoice || {}}
+              discountValue={invoiceDiscountInput}
+              onDiscountChange={(e) => setInvoiceDiscountInput(e.target.value)}
+              onApplyDiscount={handleApplyInvoiceDiscount}
+              discountBusy={discountBusy}
+              disabled={!invoice || !draftMode}
+              onFinalize={handleFinalize}
+              finalizeBusy={finalizeBusy}
+              onPrint={() => salesApi.openReceipt(invoice.id || invoice._id)}
+            />
+          </div>
         </div>
-      </div>
+      )}
+
+      <CreateReturnModal
+        show={showReturnModal}
+        invoice={invoice}
+        busy={returnBusy}
+        onClose={() => !returnBusy && setShowReturnModal(false)}
+        onSubmit={handleCreateReturn}
+      />
     </div>
   );
 }

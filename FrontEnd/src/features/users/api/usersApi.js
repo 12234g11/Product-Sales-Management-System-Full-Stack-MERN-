@@ -21,6 +21,15 @@ export const usersApi = {
     return unwrap(res);
   },
 
+  async updateDiscountLimits(userId, { maxItemDiscountPercent, maxInvoiceDiscountPercent }) {
+    const id = encodeURIComponent(userId);
+    const res = await axiosClient.patch(`/users/${id}/discount-limits`, {
+      maxItemDiscountPercent,
+      maxInvoiceDiscountPercent,
+    });
+    return unwrap(res);
+  },
+
   async disable(userId) {
     return this.updateStatus(userId, "disabled");
   },

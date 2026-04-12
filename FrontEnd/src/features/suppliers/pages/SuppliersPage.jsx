@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { suppliersApi } from "../api/suppliersApi";
 
@@ -163,6 +163,16 @@ function SupplierFormModal({ show, busy, onClose, onSubmit }) {
   );
 }
 
+const initialFilters = {
+  search: "",
+  name: "",
+  phone: "",
+  address: "",
+  isActive: "",
+  page: 1,
+  limit: 20,
+};
+
 export default function SuppliersPage() {
   const navigate = useNavigate();
 
@@ -170,26 +180,16 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
   const [showCreate, setShowCreate] = useState(false);
 
-  const [filters, setFilters] = useState({
-    search: "",
-    name: "",
-    phone: "",
-    address: "",
-    isActive: "",
-    page: 1,
-    limit: 10,
-  });
-
+  const [filters, setFilters] = useState(initialFilters);
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 20,
     total: 0,
   });
 
-  const loadSuppliers = async (nextFilters = filters) => {
+  const loadSuppliers = useCallback(async (nextFilters = initialFilters) => {
     setLoading(true);
     setError("");
 
@@ -208,23 +208,27 @@ export default function SuppliersPage() {
       setItems(Array.isArray(data?.suppliers) ? data.suppliers : []);
       setPagination(
         data?.pagination || {
-          page: nextFilters.page,
-          limit: nextFilters.limit,
+          page: nextFilters.page || 1,
+          limit: nextFilters.limit || 20,
           total: 0,
         }
       );
     } catch (e) {
       setError(e.userMessage || "فشل تحميل الموردين");
       setItems([]);
-      setPagination({ page: 1, limit: nextFilters.limit, total: 0 });
+      setPagination({
+        page: 1,
+        limit: Number(nextFilters.limit || 20),
+        total: 0,
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadSuppliers(filters);
-  }, []);
+    loadSuppliers(initialFilters);
+  }, [loadSuppliers]);
 
   const summary = useMemo(() => {
     const active = items.filter((x) => x.isActive).length;
@@ -236,11 +240,49 @@ export default function SuppliersPage() {
     };
   }, [items, pagination.total]);
 
-  const totalPages = useMemo(() => {
-    const total = Number(pagination.total || 0);
-    const limit = Number(pagination.limit || 10);
-    return Math.max(1, Math.ceil(total / limit));
-  }, [pagination]);
+  const paging = useMemo(() => {
+    const total = Math.max(0, Number(pagination.total || 0));
+    const page = Math.max(1, Number(pagination.page || 1));
+    const limit = Math.max(1, Number(pagination.limit || filters.limit || 20));
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const startItem = total === 0 ? 0 : (safePage - 1) * limit + 1;
+    const endItem = total === 0 ? 0 : Math.min(safePage * limit, total);
+
+    return {
+      total,
+      page: safePage,
+      limit,
+      totalPages,
+      startItem,
+      endItem,
+    };
+  }, [pagination, filters.limit]);
+
+  const visiblePages = useMemo(() => {
+    const pages = [];
+    const maxVisible = 5;
+
+    let start = Math.max(1, paging.page - 2);
+    let end = Math.min(paging.totalPages, start + maxVisible - 1);
+
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    for (let i = start; i <= end; i += 1) {
+      pages.push(i);
+    }
+
+    return pages;
+  }, [paging.page, paging.totalPages]);
+
+  const updateFilter = (key, value) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const onSearch = async (e) => {
     e.preventDefault();
@@ -250,27 +292,26 @@ export default function SuppliersPage() {
   };
 
   const onReset = async () => {
-    const next = {
-      search: "",
-      name: "",
-      phone: "",
-      address: "",
-      isActive: "",
-      page: 1,
-      limit: 10,
-    };
-    setFilters(next);
-    await loadSuppliers(next);
+    setFilters(initialFilters);
+    await loadSuppliers(initialFilters);
   };
 
   const goToPage = async (page) => {
-    const next = { ...filters, page };
+    const nextPage = Number(page);
+    if (!Number.isFinite(nextPage)) return;
+    if (nextPage < 1 || nextPage > paging.totalPages) return;
+    if (nextPage === paging.page) return;
+
+    const next = { ...filters, page: nextPage };
     setFilters(next);
     await loadSuppliers(next);
   };
 
   const changeLimit = async (limit) => {
-    const next = { ...filters, page: 1, limit };
+    const nextLimit = Number(limit);
+    if (!Number.isFinite(nextLimit) || nextLimit <= 0) return;
+
+    const next = { ...filters, page: 1, limit: nextLimit };
     setFilters(next);
     await loadSuppliers(next);
   };
@@ -282,7 +323,10 @@ export default function SuppliersPage() {
     try {
       await suppliersApi.create(payload);
       setShowCreate(false);
-      await loadSuppliers({ ...filters, page: 1 });
+
+      const next = { ...filters, page: 1 };
+      setFilters(next);
+      await loadSuppliers(next);
     } catch (e) {
       setError(e.userMessage || "فشل إضافة المورد");
       throw e;
@@ -371,7 +415,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="اسم / رقم / عنوان"
               />
             </div>
@@ -381,7 +425,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.name}
-                onChange={(e) => setFilters((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => updateFilter("name", e.target.value)}
               />
             </div>
 
@@ -390,7 +434,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.phone}
-                onChange={(e) => setFilters((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) => updateFilter("phone", e.target.value)}
               />
             </div>
 
@@ -399,7 +443,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.address}
-                onChange={(e) => setFilters((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) => updateFilter("address", e.target.value)}
               />
             </div>
 
@@ -408,7 +452,7 @@ export default function SuppliersPage() {
               <select
                 className="form-select"
                 value={filters.isActive}
-                onChange={(e) => setFilters((f) => ({ ...f, isActive: e.target.value }))}
+                onChange={(e) => updateFilter("isActive", e.target.value)}
               >
                 <option value="">الكل</option>
                 <option value="true">نشط</option>
@@ -417,15 +461,16 @@ export default function SuppliersPage() {
             </div>
 
             <div>
-              <label className="form-label">عدد الصفوف</label>
+              <label className="form-label">عدد العناصر</label>
               <select
                 className="form-select"
                 value={filters.limit}
-                onChange={(e) => changeLimit(Number(e.target.value))}
+                onChange={(e) => changeLimit(e.target.value)}
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
             </div>
 
@@ -462,7 +507,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="اسم / رقم / عنوان"
               />
             </div>
@@ -472,7 +517,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.name}
-                onChange={(e) => setFilters((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => updateFilter("name", e.target.value)}
               />
             </div>
 
@@ -481,7 +526,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.phone}
-                onChange={(e) => setFilters((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) => updateFilter("phone", e.target.value)}
               />
             </div>
 
@@ -490,7 +535,7 @@ export default function SuppliersPage() {
               <input
                 className="form-control"
                 value={filters.address}
-                onChange={(e) => setFilters((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) => updateFilter("address", e.target.value)}
               />
             </div>
 
@@ -499,7 +544,7 @@ export default function SuppliersPage() {
               <select
                 className="form-select"
                 value={filters.isActive}
-                onChange={(e) => setFilters((f) => ({ ...f, isActive: e.target.value }))}
+                onChange={(e) => updateFilter("isActive", e.target.value)}
               >
                 <option value="">الكل</option>
                 <option value="true">نشط</option>
@@ -512,11 +557,12 @@ export default function SuppliersPage() {
               <select
                 className="form-select"
                 value={filters.limit}
-                onChange={(e) => changeLimit(Number(e.target.value))}
+                onChange={(e) => changeLimit(e.target.value)}
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
             </div>
 
@@ -614,28 +660,101 @@ export default function SuppliersPage() {
                 </table>
               </div>
 
-              <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-3">
                 <div className="small text-secondary">
-                  الصفحة {pagination.page} من {totalPages} • الإجمالي{" "}
-                  {formatNumber(pagination.total)}
+                  عرض {formatNumber(paging.startItem)} - {formatNumber(paging.endItem)} من{" "}
+                  {formatNumber(paging.total)}
                 </div>
 
-                <div className="d-flex gap-2">
-                  <button
-                    className="btn btn-outline-secondary"
-                    disabled={pagination.page <= 1 || loading}
-                    onClick={() => goToPage(Number(pagination.page || 1) - 1)}
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <label className="small text-secondary mb-0">عدد العناصر</label>
+                  <select
+                    className="form-select form-select-sm"
+                    style={{ width: 90 }}
+                    value={filters.limit}
+                    onChange={(e) => changeLimit(e.target.value)}
                   >
-                    السابق
-                  </button>
-                  <button
-                    className="btn btn-outline-secondary"
-                    disabled={pagination.page >= totalPages || loading}
-                    onClick={() => goToPage(Number(pagination.page || 1) + 1)}
-                  >
-                    التالي
-                  </button>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
                 </div>
+
+                <nav aria-label="Suppliers pagination">
+                  <ul className="pagination pagination-sm mb-0 flex-wrap">
+                    <li className={`page-item ${paging.page <= 1 ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => goToPage(paging.page - 1)}
+                        disabled={paging.page <= 1 || loading}
+                      >
+                        السابق
+                      </button>
+                    </li>
+
+                    {visiblePages[0] > 1 && (
+                      <>
+                        <li className="page-item">
+                          <button type="button" className="page-link" onClick={() => goToPage(1)}>
+                            1
+                          </button>
+                        </li>
+                        {visiblePages[0] > 2 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                      </>
+                    )}
+
+                    {visiblePages.map((pageNumber) => (
+                      <li
+                        key={pageNumber}
+                        className={`page-item ${paging.page === pageNumber ? "active" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="page-link"
+                          onClick={() => goToPage(pageNumber)}
+                        >
+                          {pageNumber}
+                        </button>
+                      </li>
+                    ))}
+
+                    {visiblePages[visiblePages.length - 1] < paging.totalPages && (
+                      <>
+                        {visiblePages[visiblePages.length - 1] < paging.totalPages - 1 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                        <li className="page-item">
+                          <button
+                            type="button"
+                            className="page-link"
+                            onClick={() => goToPage(paging.totalPages)}
+                          >
+                            {paging.totalPages}
+                          </button>
+                        </li>
+                      </>
+                    )}
+
+                    <li className={`page-item ${paging.page >= paging.totalPages ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => goToPage(paging.page + 1)}
+                        disabled={paging.page >= paging.totalPages || loading}
+                      >
+                        التالي
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
               </div>
             </>
           )}

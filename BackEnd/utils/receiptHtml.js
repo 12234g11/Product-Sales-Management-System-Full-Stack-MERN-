@@ -1,5 +1,3 @@
-// utils/receiptHtml.js
-
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const fmtDate = (d) => {
@@ -21,6 +19,26 @@ const pctFactor = (p) => {
   return n / 100;
 };
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const statusLabel = (status) => {
+  switch (String(status || "").toLowerCase()) {
+    case "draft":
+      return "مسودة";
+    case "finalized":
+      return "مؤكدة";
+    case "cancelled":
+      return "ملغية";
+    default:
+      return String(status || "");
+  }
+};
 
 const buildLines = (invoice) => {
   const lines = [];
@@ -51,7 +69,7 @@ const buildLines = (invoice) => {
   return lines;
 };
 
-export const renderReceiptHtml = (invoice) => {
+export const renderReceiptHtml = (invoice, options = {}) => {
   const lines = buildLines(invoice);
 
   const invDiscPct = Number(invoice.invoiceDiscountPercent ?? 0);
@@ -65,25 +83,29 @@ export const renderReceiptHtml = (invoice) => {
 
   const storedTotalDiscountAmount = Number(invoice.totalDiscountAmount);
   const totalDiscountAmount = round2(
-    Number.isFinite(storedTotalDiscountAmount) ? storedTotalDiscountAmount : round2(subtotal - Number(invoice.totalAmount ?? 0))
+    Number.isFinite(storedTotalDiscountAmount)
+      ? storedTotalDiscountAmount
+      : round2(subtotal - Number(invoice.totalAmount ?? 0))
   );
-
 
   let invoiceDiscountAmount = round2(totalDiscountAmount - itemDiscountTotal);
   if (!Number.isFinite(invoiceDiscountAmount) || invoiceDiscountAmount < 0) {
     invoiceDiscountAmount = round2(afterItemDiscount * invDiscF);
   }
 
-  const totalAmount = round2(Number(invoice.totalAmount ?? round2(afterItemDiscount - invoiceDiscountAmount)));
+  const totalAmount = round2(
+    Number(invoice.totalAmount ?? round2(afterItemDiscount - invoiceDiscountAmount))
+  );
 
   const totalItemsQty = Number(
     invoice.totalItemsQty ?? lines.reduce((s, l) => s + Number(l.qty || 0), 0)
   );
 
-  const title = process.env.RECEIPT_TITLE || "فاتورة بيع";
-  const shopName = process.env.RECEIPT_SHOP_NAME || "";
+  const title = String(options.title || process.env.RECEIPT_TITLE || "فاتورة بيع").trim() || "فاتورة بيع";
+  const shopName = String(options.shopName || process.env.RECEIPT_SHOP_NAME || "").trim();
 
   const isDraft = invoice.status === "draft";
+  const arabicStatus = statusLabel(invoice.status);
 
   return `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -104,7 +126,17 @@ export const renderReceiptHtml = (invoice) => {
     .right { text-align: right; }
     .left { text-align: left; }
     .muted { opacity: 0.8; }
-    .h1 { font-size: 14px; font-weight: 700; }
+    .shop-name {
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.4;
+      margin-bottom: 2px;
+    }
+    .receipt-title {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
     .hr { border-top: 1px dashed #000; margin: 6px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; }
     .row > div { flex: 1; }
@@ -133,21 +165,29 @@ export const renderReceiptHtml = (invoice) => {
   ${isDraft ? `<div class="watermark">DRAFT</div>` : ``}
   <div class="wrap">
     <div class="center">
-      ${shopName ? `<div class="h1">${shopName}</div>` : `<div class="h1">${title}</div>`}
-      ${shopName ? `<div class="muted">${title}</div>` : ``}
+      ${
+        shopName
+          ? `
+            <div class="shop-name">${escapeHtml(shopName)}</div>
+            <div class="receipt-title muted">${escapeHtml(title)}</div>
+          `
+          : `
+            <div class="shop-name">${escapeHtml(title)}</div>
+          `
+      }
     </div>
 
     <div class="hr"></div>
 
     <div class="row small">
-      <div class="right">كود الفاتورة: <b>${invoice.invoiceCode || ""}</b></div>
-      <div class="left">${invoice.status || ""}</div>
+      <div class="right">كود الفاتورة: <b>${escapeHtml(invoice.invoiceCode || "")}</b></div>
+      <div class="left">${escapeHtml(arabicStatus)}</div>
     </div>
 
-    ${invoice.name ? `<div class="small">اسم الفاتورة: ${invoice.name}</div>` : ``}
-    <div class="small">الكاشير: ${invoice.createdByName || ""}</div>
-    <div class="small">تاريخ الإنشاء: ${fmtDate(invoice.createdAt)}</div>
-    ${invoice.finalizedAt ? `<div class="small">تاريخ التأكيد: ${fmtDate(invoice.finalizedAt)}</div>` : ``}
+    ${invoice.name ? `<div class="small">اسم الفاتورة: ${escapeHtml(invoice.name)}</div>` : ``}
+    <div class="small">الكاشير: ${escapeHtml(invoice.createdByName || "")}</div>
+    <div class="small">تاريخ الإنشاء: ${escapeHtml(fmtDate(invoice.createdAt))}</div>
+    ${invoice.finalizedAt ? `<div class="small">تاريخ التأكيد: ${escapeHtml(fmtDate(invoice.finalizedAt))}</div>` : ``}
 
     <div class="hr"></div>
 
@@ -169,12 +209,12 @@ export const renderReceiptHtml = (invoice) => {
             return `
             <tr>
               <td class="right">
-                <div class="item-name">${l.productName}</div>
+                <div class="item-name">${escapeHtml(l.productName)}</div>
               </td>
-              <td class="center">${qtyPrice}</td>
+              <td class="center">${escapeHtml(qtyPrice)}</td>
               <td class="center">
-                <div>${discPct}</div>
-                ${discAmt ? `<div class="disc-amt muted">${discAmt}</div>` : ``}
+                <div>${escapeHtml(discPct)}</div>
+                ${discAmt ? `<div class="disc-amt muted">${escapeHtml(discAmt)}</div>` : ``}
               </td>
               <td class="left"><b>${round2(l.lineAfterItem)}</b></td>
             </tr>`;

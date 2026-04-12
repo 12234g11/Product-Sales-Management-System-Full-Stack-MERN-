@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { purchasesApi } from "../api/purchasesApi";
 
@@ -30,32 +30,36 @@ function statusBadge(status) {
   return "text-bg-secondary";
 }
 
+const initialFilters = {
+  status: "",
+  search: "",
+  invoiceCode: "",
+  supplierName: "",
+  supplierId: "",
+  createdByName: "",
+  from: "",
+  to: "",
+  days: "",
+  minTotalAmount: "",
+  maxTotalAmount: "",
+  page: 1,
+  limit: 20,
+};
+
 export default function PurchaseInvoicesPage() {
   const navigate = useNavigate();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const [filters, setFilters] = useState({
-    status: "",
-    search: "",
-    invoiceCode: "",
-    supplierName: "",
-    supplierId: "",
-    createdByName: "",
-    from: "",
-    to: "",
-    days: "",
-    minTotalAmount: "",
-    maxTotalAmount: "",
+  const [filters, setFilters] = useState(initialFilters);
+  const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 20,
+    total: 0,
   });
 
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0 });
-
-  const load = async (nextFilters = filters) => {
+  const load = useCallback(async (nextFilters = initialFilters) => {
     setLoading(true);
     setError("");
 
@@ -77,24 +81,67 @@ export default function PurchaseInvoicesPage() {
       };
 
       const data = await purchasesApi.list(params);
+
       setItems(Array.isArray(data?.invoices) ? data.invoices : []);
-      setPagination(data?.pagination || { page: 1, limit: nextFilters.limit, total: 0 });
+      setPagination(
+        data?.pagination || {
+          page: nextFilters.page || 1,
+          limit: nextFilters.limit || 20,
+          total: 0,
+        }
+      );
     } catch (e) {
       setError(e.userMessage || "فشل تحميل فواتير الشراء");
       setItems([]);
-      setPagination({ page: 1, limit: filters.limit, total: 0 });
+      setPagination({
+        page: 1,
+        limit: Number(filters.limit || 20),
+        total: 0,
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters.limit]);
 
   useEffect(() => {
-    load(filters);
-  }, []);
+    load(initialFilters);
+  }, [load]);
 
   const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil(Number(pagination.total || 0) / Number(pagination.limit || 10)));
+    return Math.max(1, Math.ceil(Number(pagination.total || 0) / Number(pagination.limit || 20)));
   }, [pagination]);
+
+  const currentPage = Math.max(1, Number(pagination.page || 1));
+  const totalItems = Math.max(0, Number(pagination.total || 0));
+  const currentLimit = Math.max(1, Number(pagination.limit || 20));
+
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * currentLimit + 1;
+  const endItem = totalItems === 0 ? 0 : Math.min(currentPage * currentLimit, totalItems);
+
+  const visiblePages = useMemo(() => {
+    const pages = [];
+    const maxVisible = 5;
+
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    for (let i = start; i <= end; i += 1) {
+      pages.push(i);
+    }
+
+    return pages;
+  }, [currentPage, totalPages]);
+
+  const updateFilter = (key, value) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const onSearch = async (e) => {
     e.preventDefault();
@@ -104,33 +151,26 @@ export default function PurchaseInvoicesPage() {
   };
 
   const onReset = async () => {
-    const reset = {
-      status: "",
-      search: "",
-      invoiceCode: "",
-      supplierName: "",
-      supplierId: "",
-      createdByName: "",
-      from: "",
-      to: "",
-      days: "",
-      minTotalAmount: "",
-      maxTotalAmount: "",
-      page: 1,
-      limit: 10,
-    };
-    setFilters(reset);
-    await load(reset);
+    setFilters(initialFilters);
+    await load(initialFilters);
   };
 
   const goToPage = async (page) => {
-    const next = { ...filters, page };
+    const nextPage = Number(page);
+    if (!Number.isFinite(nextPage)) return;
+    if (nextPage < 1 || nextPage > totalPages) return;
+    if (nextPage === currentPage) return;
+
+    const next = { ...filters, page: nextPage };
     setFilters(next);
     await load(next);
   };
 
   const changeLimit = async (limit) => {
-    const next = { ...filters, page: 1, limit };
+    const nextLimit = Number(limit);
+    if (!Number.isFinite(nextLimit) || nextLimit <= 0) return;
+
+    const next = { ...filters, page: 1, limit: nextLimit };
     setFilters(next);
     await load(next);
   };
@@ -140,9 +180,7 @@ export default function PurchaseInvoicesPage() {
       <div className="d-md-none mb-3">
         <div className="mb-2">
           <h3 className="m-0 text-white">فواتير الشراء</h3>
-          <div className="text-white small">
-            الإجمالي: {formatNumber(pagination.total)}
-          </div>
+          <div className="text-white small">الإجمالي: {formatNumber(pagination.total)}</div>
         </div>
 
         <div className="d-grid gap-2">
@@ -181,7 +219,7 @@ export default function PurchaseInvoicesPage() {
               <select
                 className="form-select"
                 value={filters.status}
-                onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+                onChange={(e) => updateFilter("status", e.target.value)}
               >
                 <option value="">الكل</option>
                 <option value="draft">مسودة</option>
@@ -195,7 +233,7 @@ export default function PurchaseInvoicesPage() {
               <input
                 className="form-control"
                 value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                onChange={(e) => updateFilter("search", e.target.value)}
                 placeholder="كود الفاتورة / المورد / الملاحظات"
               />
             </div>
@@ -205,7 +243,7 @@ export default function PurchaseInvoicesPage() {
               <input
                 className="form-control"
                 value={filters.invoiceCode}
-                onChange={(e) => setFilters((f) => ({ ...f, invoiceCode: e.target.value }))}
+                onChange={(e) => updateFilter("invoiceCode", e.target.value)}
               />
             </div>
 
@@ -214,7 +252,7 @@ export default function PurchaseInvoicesPage() {
               <input
                 className="form-control"
                 value={filters.supplierName}
-                onChange={(e) => setFilters((f) => ({ ...f, supplierName: e.target.value }))}
+                onChange={(e) => updateFilter("supplierName", e.target.value)}
               />
             </div>
 
@@ -223,7 +261,7 @@ export default function PurchaseInvoicesPage() {
               <input
                 className="form-control"
                 value={filters.supplierId}
-                onChange={(e) => setFilters((f) => ({ ...f, supplierId: e.target.value }))}
+                onChange={(e) => updateFilter("supplierId", e.target.value)}
               />
             </div>
 
@@ -232,7 +270,7 @@ export default function PurchaseInvoicesPage() {
               <input
                 className="form-control"
                 value={filters.createdByName}
-                onChange={(e) => setFilters((f) => ({ ...f, createdByName: e.target.value }))}
+                onChange={(e) => updateFilter("createdByName", e.target.value)}
               />
             </div>
 
@@ -242,7 +280,7 @@ export default function PurchaseInvoicesPage() {
                 className="form-control"
                 type="date"
                 value={filters.from}
-                onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
+                onChange={(e) => updateFilter("from", e.target.value)}
               />
             </div>
 
@@ -252,7 +290,7 @@ export default function PurchaseInvoicesPage() {
                 className="form-control"
                 type="date"
                 value={filters.to}
-                onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+                onChange={(e) => updateFilter("to", e.target.value)}
               />
             </div>
 
@@ -263,7 +301,7 @@ export default function PurchaseInvoicesPage() {
                 type="number"
                 min={1}
                 value={filters.days}
-                onChange={(e) => setFilters((f) => ({ ...f, days: e.target.value }))}
+                onChange={(e) => updateFilter("days", e.target.value)}
               />
             </div>
 
@@ -275,9 +313,7 @@ export default function PurchaseInvoicesPage() {
                 min={0}
                 step="0.01"
                 value={filters.minTotalAmount}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, minTotalAmount: e.target.value }))
-                }
+                onChange={(e) => updateFilter("minTotalAmount", e.target.value)}
               />
             </div>
 
@@ -289,22 +325,21 @@ export default function PurchaseInvoicesPage() {
                 min={0}
                 step="0.01"
                 value={filters.maxTotalAmount}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, maxTotalAmount: e.target.value }))
-                }
+                onChange={(e) => updateFilter("maxTotalAmount", e.target.value)}
               />
             </div>
 
             <div className="col-12 col-md-2">
-              <label className="form-label">عدد الصفوف</label>
+              <label className="form-label">عدد العناصر</label>
               <select
                 className="form-select"
                 value={filters.limit}
-                onChange={(e) => changeLimit(Number(e.target.value))}
+                onChange={(e) => changeLimit(e.target.value)}
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
             </div>
 
@@ -381,27 +416,100 @@ export default function PurchaseInvoicesPage() {
                 </table>
               </div>
 
-              <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-3">
                 <div className="small text-secondary">
-                  الصفحة {pagination.page} من {totalPages} • الإجمالي {formatNumber(pagination.total)}
+                  عرض {formatNumber(startItem)} - {formatNumber(endItem)} من {formatNumber(totalItems)}
                 </div>
 
-                <div className="d-flex gap-2">
-                  <button
-                    className="btn btn-outline-secondary"
-                    disabled={pagination.page <= 1 || loading}
-                    onClick={() => goToPage(Number(pagination.page || 1) - 1)}
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <label className="small text-secondary mb-0">عدد العناصر</label>
+                  <select
+                    className="form-select form-select-sm"
+                    style={{ width: 90 }}
+                    value={filters.limit}
+                    onChange={(e) => changeLimit(e.target.value)}
                   >
-                    السابق
-                  </button>
-                  <button
-                    className="btn btn-outline-secondary"
-                    disabled={pagination.page >= totalPages || loading}
-                    onClick={() => goToPage(Number(pagination.page || 1) + 1)}
-                  >
-                    التالي
-                  </button>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
                 </div>
+
+                <nav aria-label="Purchase pagination">
+                  <ul className="pagination pagination-sm mb-0 flex-wrap">
+                    <li className={`page-item ${currentPage <= 1 ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage <= 1 || loading}
+                      >
+                        السابق
+                      </button>
+                    </li>
+
+                    {visiblePages[0] > 1 && (
+                      <>
+                        <li className="page-item">
+                          <button type="button" className="page-link" onClick={() => goToPage(1)}>
+                            1
+                          </button>
+                        </li>
+                        {visiblePages[0] > 2 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                      </>
+                    )}
+
+                    {visiblePages.map((pageNumber) => (
+                      <li
+                        key={pageNumber}
+                        className={`page-item ${currentPage === pageNumber ? "active" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="page-link"
+                          onClick={() => goToPage(pageNumber)}
+                        >
+                          {pageNumber}
+                        </button>
+                      </li>
+                    ))}
+
+                    {visiblePages[visiblePages.length - 1] < totalPages && (
+                      <>
+                        {visiblePages[visiblePages.length - 1] < totalPages - 1 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                        <li className="page-item">
+                          <button
+                            type="button"
+                            className="page-link"
+                            onClick={() => goToPage(totalPages)}
+                          >
+                            {totalPages}
+                          </button>
+                        </li>
+                      </>
+                    )}
+
+                    <li className={`page-item ${currentPage >= totalPages ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages || loading}
+                      >
+                        التالي
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
               </div>
             </>
           )}

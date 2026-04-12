@@ -4,19 +4,41 @@ function unwrap(res) {
   return res?.data?.data ?? res?.data;
 }
 
+function cleanParams(params = {}) {
+  const cleaned = {};
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+
+    if (typeof value === "boolean") {
+      cleaned[key] = value;
+      return;
+    }
+
+    cleaned[key] = value;
+  });
+
+  return cleaned;
+}
+
 export const productsApi = {
-  async getAll() {
-    const res = await axiosClient.get("/products");
+  async list(params = {}) {
+    const res = await axiosClient.get("/products", {
+      params: cleanParams(params),
+    });
     return unwrap(res);
   },
 
-  async search({ id, name, category }) {
+  async search(params = {}) {
     const res = await axiosClient.get("/products/search", {
-      params: {
-        id: id || undefined,
-        name: name || undefined,
-        category: category || undefined,
-      },
+      params: cleanParams(params),
+    });
+    return unwrap(res);
+  },
+
+  async getLowStock(params = {}) {
+    const res = await axiosClient.get("/products/low-stock", {
+      params: cleanParams(params),
     });
     return unwrap(res);
   },
@@ -26,43 +48,45 @@ export const productsApi = {
     return unwrap(res);
   },
 
-  async update(oldId, payload) {
-    const res = await axiosClient.put(`/products/${encodeURIComponent(oldId)}`, payload);
+  async update(productId, payload) {
+    const res = await axiosClient.put(`/products/${encodeURIComponent(productId)}`, payload);
     return unwrap(res);
   },
 
-  async remove(id) {
-    const res = await axiosClient.delete(`/products/${encodeURIComponent(id)}`);
+  async remove(productId) {
+    const res = await axiosClient.delete(`/products/${encodeURIComponent(productId)}`);
     return unwrap(res);
+  },
+
+  async adjustStock(productId, payload) {
+    const res = await axiosClient.patch(
+      `/products/${encodeURIComponent(productId)}/adjust-stock`,
+      payload
+    );
+    return unwrap(res);
+  },
+
+  async getMovements(productId, params = {}) {
+    const res = await axiosClient.get(
+      `/products/${encodeURIComponent(productId)}/movements`,
+      {
+        params: cleanParams(params),
+      }
+    );
+
+    return unwrap(res)?.movements ?? unwrap(res);
   },
 
   async autoComplete(query) {
     const res = await axiosClient.get("/products/auto-complete", {
-      params: { query },
+      params: cleanParams({ query }),
     });
     return unwrap(res);
   },
 
-  async autoFill({ id, name }) {
+  async autoFill(params = {}) {
     const res = await axiosClient.get("/products/auto-fill", {
-      params: { id, name },
-    });
-    return unwrap(res);
-  },
-
-  async getLowStock() {
-    const res = await axiosClient.get("/products/low-stock");
-    return unwrap(res);
-  },
-
-  async adjustStock(id, payload) {
-    const res = await axiosClient.patch(`/products/${encodeURIComponent(id)}/adjust-stock`, payload);
-    return unwrap(res);
-  },
-
-  async getMovements(id, params = {}) {
-    const res = await axiosClient.get(`/products/${encodeURIComponent(id)}/movements`, {
-      params,
+      params: cleanParams(params),
     });
     return unwrap(res);
   },

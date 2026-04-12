@@ -4,6 +4,7 @@ import SaleReturn from "../models/SaleReturn.js";
 import User from "../models/User.js";
 import Product from "../models/Product.js";
 import StockMovement from "../models/StockMovement.js";
+import Workspace from "../models/Workspace.js";
 import { sendSuccess, sendFail, sendError } from "../utils/jsend.js";
 import { clean } from "../utils/cleanResponseForInvoices.js";
 import { recalcInvoiceTotals, setInvoiceUnitNetPrices } from "../utils/invoiceTotals.js";
@@ -656,7 +657,9 @@ const printReceiptPdf = async (req, res) => {
         const workspaceId = req.user.workspaceId;
         const { id: invoiceId } = req.params;
 
-        if (!mongoose.Types.ObjectId.isValid(invoiceId)) return sendFail(res, { id: "Invalid invoice id" }, 400);
+        if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
+            return sendFail(res, { id: "Invalid invoice id" }, 400);
+        }
 
         const inv = await SaleInvoice.findOne({ _id: invoiceId, workspaceId });
         if (!inv) return sendFail(res, { id: "Invoice not found" }, 404);
@@ -665,7 +668,12 @@ const printReceiptPdf = async (req, res) => {
             return sendFail(res, { status: "Only finalized invoices can be printed" }, 403);
         }
 
-        const html = renderReceiptHtml(inv);
+        const workspace = await Workspace.findById(workspaceId).select("name").lean();
+
+        const html = renderReceiptHtml(inv, {
+            shopName: workspace?.name || process.env.RECEIPT_SHOP_NAME || "",
+            title: "فاتورة بيع",
+        });
 
         let puppeteer;
         try {
@@ -689,7 +697,13 @@ const printReceiptPdf = async (req, res) => {
             const heightPx = await page.evaluate(() => {
                 const body = document.body;
                 const html = document.documentElement;
-                return Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight);
+                return Math.max(
+                    body.scrollHeight,
+                    body.offsetHeight,
+                    html.clientHeight,
+                    html.scrollHeight,
+                    html.offsetHeight
+                );
             });
 
             const pdfBuffer = await page.pdf({

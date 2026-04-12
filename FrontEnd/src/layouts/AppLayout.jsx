@@ -35,17 +35,27 @@ export default function AppLayout() {
   const [renameError, setRenameError] = useState("");
 
   const menu = [
-    ...(role === "admin" ? [{ to: "/dashboard", label: "لوحة التحكم" }] : []),
-    { to: "/products", label: "المنتجات" },
+    ...(role === "admin"
+      ? [{ to: "/dashboard", label: "لوحة التحكم", end: true }]
+      : []),
+
+    { to: "/products", label: "المنتجات", end: true },
     { to: "/suppliers", label: "الموردين" },
     { to: "/purchases", label: "فواتير الشراء" },
-    { to: "/sales/new", label: "بيع جديد" },
-    { to: "/sales", label: "المبيعات" },
-    { to: "/products/low-stock", label: "مخزون منخفض" },
-    ...(role === "admin" ? [{ to: "/users", label: "المستخدمين" }] : []),
+    { to: "/sales/new", label: "إنشاء فاتورة بيع", end: true },
+    { to: "/sales", label: "فواتير البيع", end: true },
+    { to: "/sales/returns", label: "المرتجعات", end: true },
+    { to: "/stock-movements", label: "حركة المخزون", end: true },
+    { to: "/products/low-stock", label: "مخزون منخفض", end: true },
+
+    ...(role === "admin"
+      ? [{ to: "/users", label: "المستخدمين", end: true }]
+      : []),
   ];
 
-  const linkClass = ({ isActive }) => `nav-link app-nav-link ${isActive ? "active" : ""}`;
+  const linkClass = ({ isActive }) =>
+    `nav-link app-nav-link ${isActive ? "active" : ""}`;
+
   const roleLabel = role === "admin" ? "مدير" : "عامل";
   const canRenameWorkspace = role === "admin";
 
@@ -54,7 +64,9 @@ export default function AppLayout() {
   }, [initialWorkspaceName]);
 
   const cleanupBackdrops = () => {
-    document.querySelectorAll(".offcanvas-backdrop, .modal-backdrop").forEach((el) => el.remove());
+    document
+      .querySelectorAll(".offcanvas-backdrop, .modal-backdrop")
+      .forEach((el) => el.remove());
 
     document.body.classList.remove("modal-open");
     document.body.style.removeProperty("overflow");
@@ -72,7 +84,9 @@ export default function AppLayout() {
     const instance = Offcanvas.getInstance(el);
 
     if (instance) {
-      el.addEventListener("hidden.bs.offcanvas", cleanupBackdrops, { once: true });
+      el.addEventListener("hidden.bs.offcanvas", cleanupBackdrops, {
+        once: true,
+      });
       instance.hide();
     } else {
       cleanupBackdrops();
@@ -202,7 +216,6 @@ export default function AppLayout() {
 
           <div className="d-flex align-items-center gap-2" style={{ minWidth: 0 }}>
             <div className="fw-bold text-white text-truncate">{workspaceName}</div>
-
             {canRenameWorkspace ? <WorkspaceEditButton onClick={openRenameModal} /> : null}
           </div>
 
@@ -221,7 +234,6 @@ export default function AppLayout() {
                   <div className="mb-3">
                     <div className="d-flex align-items-center justify-content-between gap-2">
                       <div className="fw-bold fs-5 text-white text-truncate">{workspaceName}</div>
-
                       {canRenameWorkspace ? <WorkspaceEditButton onClick={openRenameModal} /> : null}
                     </div>
 
@@ -232,7 +244,12 @@ export default function AppLayout() {
 
                   <nav className="nav nav-pills flex-column gap-2">
                     {menu.map((m) => (
-                      <NavLink key={m.to} to={m.to} className={linkClass}>
+                      <NavLink
+                        key={m.to}
+                        to={m.to}
+                        end={Boolean(m.end)}
+                        className={linkClass}
+                      >
                         {m.label}
                       </NavLink>
                     ))}
@@ -284,7 +301,13 @@ export default function AppLayout() {
               <div className="offcanvas-body">
                 <nav className="nav nav-pills flex-column gap-2">
                   {menu.map((m) => (
-                    <NavLink key={m.to} to={m.to} className={linkClass} onClick={closeMobileSidebar}>
+                    <NavLink
+                      key={m.to}
+                      to={m.to}
+                      end={Boolean(m.end)}
+                      className={linkClass}
+                      onClick={closeMobileSidebar}
+                    >
                       {m.label}
                     </NavLink>
                   ))}

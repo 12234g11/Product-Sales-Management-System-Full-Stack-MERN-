@@ -1,79 +1,81 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import CreateReturnModal from "../components/CreateReturnModal";
-import { salesApi } from "../api/salesApi";
+import { stockMovementsApi } from "../api/stockMovementsApi";
 import {
+  categoryLabel,
   formatDateTime,
-  formatMoney,
   formatNumber,
-  invoiceStatusLabel,
+  movementDirectionBadge,
+  movementDirectionLabel,
+  movementTypeBadge,
+  movementTypeLabel,
   normalizeApiError,
-  returnStatusLabel,
-} from "../utils/salesFormatters";
+  reasonLabel,
+  referenceTypeLabel,
+} from "../utils/stockMovementFormatters";
 
 const initialFilters = {
-  status: "",
-  returnStatus: "",
-  excludeFullyReturned: false,
-  search: "",
-  invoiceCode: "",
-  createdByName: "",
-  createdByUserId: "",
+  q: "",
+  type: "",
+  direction: "",
+  productId: "",
+  refType: "",
+  refCode: "",
+  performedByName: "",
+  reason: "",
   from: "",
   to: "",
-  days: "",
-  minTotalAmount: "",
-  maxTotalAmount: "",
-  productId: "",
-  productName: "",
-  category: "",
   page: 1,
   limit: 20,
 };
 
-export default function SalesPage() {
-  const navigate = useNavigate();
+export default function StockMovementsPage() {
   const [filters, setFilters] = useState(initialFilters);
   const [data, setData] = useState({
-    invoices: [],
+    movements: [],
     pagination: { total: 0, page: 1, limit: 20 },
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [returnBusy, setReturnBusy] = useState(false);
 
-  const loadInvoices = useCallback(async () => {
+  const loadMovements = useCallback(async () => {
     setLoading(true);
     setError("");
+
     try {
-      const res = await salesApi.listInvoices(filters);
+      const res = await stockMovementsApi.list(filters);
+
       setData({
-        invoices: Array.isArray(res?.invoices) ? res.invoices : [],
-        pagination: res?.pagination || {
-          total: 0,
-          page: Number(filters.page) || 1,
-          limit: Number(filters.limit) || 20,
-        },
+        movements: Array.isArray(res?.movements) ? res.movements : [],
+        pagination: res?.pagination || { total: 0, page: 1, limit: 20 },
       });
     } catch (err) {
-      setError(normalizeApiError(err, "فشل تحميل الفواتير"));
+      setError(normalizeApiError(err, "فشل تحميل حركة المخزون"));
+      setData({
+        movements: [],
+        pagination: { total: 0, page: 1, limit: Number(filters.limit || 20) },
+      });
     } finally {
       setLoading(false);
     }
   }, [filters]);
 
   useEffect(() => {
-    loadInvoices();
-  }, [loadInvoices]);
+    loadMovements();
+  }, [loadMovements]);
 
   const totals = useMemo(() => {
-    const invoices = data.invoices || [];
+    const rows = data.movements || [];
+
     return {
-      count: invoices.length,
-      amount: invoices.reduce((sum, inv) => sum + Number(inv.totalAmount || 0), 0),
+      count: rows.length,
+      qtyIn: rows
+        .filter((x) => Number(x.qtyDelta || 0) > 0)
+        .reduce((sum, x) => sum + Number(x.qtyDelta || 0), 0),
+      qtyOut: rows
+        .filter((x) => Number(x.qtyDelta || 0) < 0)
+        .reduce((sum, x) => sum + Math.abs(Number(x.qtyDelta || 0)), 0),
     };
-  }, [data]);
+  }, [data.movements]);
 
   const pagination = useMemo(() => {
     const raw = data?.pagination || {};
@@ -81,7 +83,6 @@ export default function SalesPage() {
     const page = Math.max(1, Number(raw.page) || 1);
     const limit = Math.max(1, Number(raw.limit) || Number(filters.limit) || 20);
     const totalPages = Math.max(1, Math.ceil(total / limit));
-
     const safePage = Math.min(page, totalPages);
     const startItem = total === 0 ? 0 : (safePage - 1) * limit + 1;
     const endItem = total === 0 ? 0 : Math.min(safePage * limit, total);
@@ -140,44 +141,23 @@ export default function SalesPage() {
 
   const resetFilters = () => setFilters(initialFilters);
 
-  const openReturn = async (row) => {
-    try {
-      const full = await salesApi.getInvoice(row.id || row._id);
-      setSelectedInvoice(full);
-    } catch (err) {
-      setError(normalizeApiError(err, "فشل تحميل الفاتورة للمرتجع"));
-    }
-  };
-
-  const submitReturn = async (payload) => {
-    setReturnBusy(true);
-    setError("");
-    try {
-      await salesApi.createReturn(payload);
-      setSelectedInvoice(null);
-      await loadInvoices();
-    } catch (err) {
-      setError(normalizeApiError(err, "فشل إنشاء المرتجع"));
-    } finally {
-      setReturnBusy(false);
-    }
-  };
-
   return (
     <div className="container-fluid">
       <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
-          <h3 className="m-0 text-white">فواتير البيع</h3>
+          <h3 className="m-0 text-white">حركة المخزون</h3>
           <div className="text-white mt-2 small">
-            عدد الفواتير في الصفحة: {formatNumber(totals.count)} • إجمالي المعروض في الصفحة: {formatMoney(totals.amount)}
+            عدد السجلات في الصفحة: {formatNumber(totals.count)} •
+            وارد الصفحة: {formatNumber(totals.qtyIn)} •
+            صادر الصفحة: {formatNumber(totals.qtyOut)}
           </div>
           <div className="text-white small">
             إجمالي النتائج: {formatNumber(pagination.total)}
           </div>
         </div>
 
-        <button className="btn btn-primary" onClick={() => navigate("/sales/new")}>
-          فاتورة جديدة
+        <button className="btn btn-outline-secondary" onClick={loadMovements} disabled={loading}>
+          تحديث
         </button>
       </div>
 
@@ -190,57 +170,92 @@ export default function SalesPage() {
               <label className="form-label">بحث</label>
               <input
                 className="form-control"
-                value={filters.search}
-                onChange={(e) => setField("search", e.target.value)}
+                value={filters.q}
+                onChange={(e) => setField("q", e.target.value)}
+                placeholder="كود الصنف / الاسم / المرجع / السبب / الملاحظة"
               />
             </div>
 
-            <div className="col-12 col-md-3">
-              <label className="form-label">كود الفاتورة</label>
-              <input
-                className="form-control"
-                value={filters.invoiceCode}
-                onChange={(e) => setField("invoiceCode", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-3">
-              <label className="form-label">الحالة</label>
+            <div className="col-12 col-md-2">
+              <label className="form-label">نوع الحركة</label>
               <select
                 className="form-select"
-                value={filters.status}
-                onChange={(e) => setField("status", e.target.value)}
+                value={filters.type}
+                onChange={(e) => setField("type", e.target.value)}
               >
                 <option value="">الكل</option>
-                <option value="draft">مسودة</option>
-                <option value="finalized">مؤكدة</option>
+                <option value="purchase">شراء</option>
+                <option value="sale">بيع</option>
+                <option value="sale_return">مرتجع بيع</option>
+                <option value="adjustment">تسوية</option>
               </select>
             </div>
 
-            <div className="col-12 col-md-3">
-              <label className="form-label">حالة المرتجع</label>
+            <div className="col-12 col-md-2">
+              <label className="form-label">الاتجاه</label>
               <select
                 className="form-select"
-                value={filters.returnStatus}
-                onChange={(e) => setField("returnStatus", e.target.value)}
+                value={filters.direction}
+                onChange={(e) => setField("direction", e.target.value)}
               >
                 <option value="">الكل</option>
-                <option value="none">لا يوجد</option>
-                <option value="partial">جزئي</option>
-                <option value="full">كامل</option>
+                <option value="in">داخل</option>
+                <option value="out">خارج</option>
               </select>
             </div>
 
-            <div className="col-12 col-md-3">
-              <label className="form-label">اسم المنشئ</label>
+            <div className="col-12 col-md-2">
+              <label className="form-label">كود الصنف</label>
               <input
                 className="form-control"
-                value={filters.createdByName}
-                onChange={(e) => setField("createdByName", e.target.value)}
+                value={filters.productId}
+                onChange={(e) => setField("productId", e.target.value)}
+              />
+            </div>
+
+            <div className="col-12 col-md-2">
+              <label className="form-label">نوع المرجع</label>
+              <select
+                className="form-select"
+                value={filters.refType}
+                onChange={(e) => setField("refType", e.target.value)}
+              >
+                <option value="">الكل</option>
+                <option value="SaleInvoice">فاتورة بيع</option>
+                <option value="PurchaseInvoice">فاتورة شراء</option>
+                <option value="SaleReturn">مرتجع بيع</option>
+                <option value="manual_adjustment">تسوية يدوية</option>
+              </select>
+            </div>
+
+            <div className="col-12 col-md-1">
+              <label className="form-label">كود المرجع</label>
+              <input
+                className="form-control"
+                value={filters.refCode}
+                onChange={(e) => setField("refCode", e.target.value)}
               />
             </div>
 
             <div className="col-12 col-md-3">
+              <label className="form-label">نفذت بواسطة</label>
+              <input
+                className="form-control"
+                value={filters.performedByName}
+                onChange={(e) => setField("performedByName", e.target.value)}
+              />
+            </div>
+
+            <div className="col-12 col-md-3">
+              <label className="form-label">السبب</label>
+              <input
+                className="form-control"
+                value={filters.reason}
+                onChange={(e) => setField("reason", e.target.value)}
+              />
+            </div>
+
+            <div className="col-12 col-md-2">
               <label className="form-label">من</label>
               <input
                 type="date"
@@ -250,7 +265,7 @@ export default function SalesPage() {
               />
             </div>
 
-            <div className="col-12 col-md-3">
+            <div className="col-12 col-md-2">
               <label className="form-label">إلى</label>
               <input
                 type="date"
@@ -260,84 +275,28 @@ export default function SalesPage() {
               />
             </div>
 
-            <div className="col-12 col-md-3">
-              <label className="form-label">آخر عدد أيام</label>
-              <input
-                type="number"
-                className="form-control"
-                value={filters.days}
-                onChange={(e) => setField("days", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-3">
-              <label className="form-label">حد أدنى للإجمالي</label>
-              <input
-                type="number"
-                min="0"
-                className="form-control"
-                value={filters.minTotalAmount}
-                onChange={(e) => setField("minTotalAmount", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-3">
-              <label className="form-label">حد أقصى للإجمالي</label>
-              <input
-                type="number"
-                min="0"
-                className="form-control"
-                value={filters.maxTotalAmount}
-                onChange={(e) => setField("maxTotalAmount", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-2">
-              <label className="form-label">كود صنف داخل الفاتورة</label>
-              <input
-                className="form-control"
-                value={filters.productId}
-                onChange={(e) => setField("productId", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-2">
-              <label className="form-label">اسم صنف</label>
-              <input
-                className="form-control"
-                value={filters.productName}
-                onChange={(e) => setField("productName", e.target.value)}
-              />
-            </div>
-
-            <div className="col-12 col-md-2">
-              <label className="form-label">الفئة</label>
-              <input
-                className="form-control"
-                value={filters.category}
-                onChange={(e) => setField("category", e.target.value)}
-              />
-            </div>
-
             <div className="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
-              <div className="form-check">
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  id="excludeFullyReturned"
-                  checked={filters.excludeFullyReturned}
-                  onChange={(e) => setField("excludeFullyReturned", e.target.checked)}
-                />
-                <label className="form-check-label" htmlFor="excludeFullyReturned">
-                  استبعاد المرتجع الكامل
-                </label>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <label className="small text-secondary mb-0">عدد العناصر</label>
+                <select
+                  className="form-select"
+                  style={{ width: 110 }}
+                  value={filters.limit}
+                  onChange={(e) => setLimit(e.target.value)}
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
               </div>
 
               <div className="d-flex gap-2">
                 <button className="btn btn-outline-secondary" onClick={resetFilters}>
                   مسح
                 </button>
-                <button className="btn btn-outline-primary" onClick={loadInvoices} disabled={loading}>
+                <button className="btn btn-outline-primary" onClick={loadMovements} disabled={loading}>
                   تحديث
                 </button>
               </div>
@@ -350,72 +309,69 @@ export default function SalesPage() {
         <div className="card-body">
           {loading ? (
             <div className="text-center py-5">جاري التحميل...</div>
-          ) : data.invoices.length === 0 ? (
-            <div className="text-center py-5 text-secondary">لا توجد فواتير</div>
+          ) : data.movements.length === 0 ? (
+            <div className="text-center py-5 text-secondary">لا توجد حركات مخزون</div>
           ) : (
             <>
               <div className="table-responsive">
                 <table className="table table-hover align-middle text-nowrap">
                   <thead>
                     <tr>
-                      <th className="text-end">الكود / الاسم</th>
-                      <th className="text-end">الحالة</th>
-                      <th className="text-end">الكاشير</th>
-                      <th className="text-end">تاريخ الإنشاء</th>
-                      <th className="text-end">تاريخ التأكيد</th>
-                      <th className="text-end">إجمالي الكميات</th>
-                      <th className="text-end">الإجمالي</th>
-                      <th className="text-end">المرتجع</th>
-                      <th className="text-end">مسترد</th>
-                      <th className="text-end"></th>
+                      <th className="text-end">الصنف</th>
+                      <th className="text-end">النوع</th>
+                      <th className="text-end">الاتجاه</th>
+                      <th className="text-end">الكمية</th>
+                      <th className="text-end">قبل</th>
+                      <th className="text-end">بعد</th>
+                      <th className="text-end">المرجع</th>
+                      <th className="text-end">السبب</th>
+                      <th className="text-end">المنفذ</th>
+                      <th className="text-end">التاريخ</th>
                     </tr>
                   </thead>
-
                   <tbody>
-                    {data.invoices.map((row) => (
+                    {data.movements.map((row) => (
                       <tr key={row.id || row._id}>
                         <td className="text-end">
-                          <div className="fw-semibold">{row.invoiceCode}</div>
-                          <div className="small text-secondary">{row.name || "-"}</div>
-                        </td>
-
-                        <td className="text-end">{invoiceStatusLabel(row.status)}</td>
-                        <td className="text-end">{row.createdByName || "-"}</td>
-                        <td className="text-end">{formatDateTime(row.createdAt)}</td>
-                        <td className="text-end">{formatDateTime(row.finalizedAt)}</td>
-                        <td className="text-end">{formatNumber(row.totalItemsQty)}</td>
-                        <td className="text-end fw-semibold">{formatMoney(row.totalAmount)}</td>
-                        <td className="text-end">{returnStatusLabel(row.returnStatus)}</td>
-                        <td className="text-end">{formatMoney(row.totalRefundedAmount)}</td>
-
-                        <td className="text-end">
-                          <div className="d-flex gap-2 justify-content-end flex-wrap">
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => navigate(`/sales/${row.id || row._id}`)}
-                            >
-                              فتح
-                            </button>
-
-                            {row.status === "finalized" && (
-                              <button
-                                className="btn btn-warning text-dark"
-                                onClick={() => salesApi.openReceipt(row.id || row._id)}
-                              >
-                                طباعة
-                              </button>
-                            )}
-
-                            {row.status === "finalized" && row.returnStatus !== "full" && (
-                              <button
-                                className="btn btn-sm btn-outline-warning"
-                                onClick={() => openReturn(row)}
-                              >
-                                مرتجع
-                              </button>
-                            )}
+                          <div className="fw-semibold">{row.productName || "-"}</div>
+                          <div className="small text-secondary">{row.productId || "-"}</div>
+                          <div className="small text-secondary">
+                            {categoryLabel(row.productCategory)}
                           </div>
                         </td>
+
+                        <td className="text-end">
+                          <span className={`badge ${movementTypeBadge(row.type)}`}>
+                            {movementTypeLabel(row.type)}
+                          </span>
+                        </td>
+
+                        <td className="text-end">
+                          <span className={`badge ${movementDirectionBadge(row.qtyDelta)}`}>
+                            {movementDirectionLabel(row.qtyDelta)}
+                          </span>
+                        </td>
+
+                        <td className="text-end fw-semibold">
+                          {Number(row.qtyDelta || 0) > 0 ? "+" : ""}
+                          {formatNumber(row.qtyDelta)}
+                        </td>
+
+                        <td className="text-end">{formatNumber(row.beforeQty)}</td>
+                        <td className="text-end">{formatNumber(row.afterQty)}</td>
+
+                        <td className="text-end">
+                          <div>{referenceTypeLabel(row.refType)}</div>
+                          <div className="small text-secondary">{row.refCode || "-"}</div>
+                        </td>
+
+                        <td className="text-end">
+                          <div>{reasonLabel(row.reason)}</div>
+                          <div className="small text-secondary">{row.note || "-"}</div>
+                        </td>
+
+                        <td className="text-end">{row.performedByName || "-"}</td>
+                        <td className="text-end">{formatDateTime(row.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -433,17 +389,18 @@ export default function SalesPage() {
                   <select
                     className="form-select form-select-sm"
                     style={{ width: 90 }}
-                    value={pagination.limit}
+                    value={filters.limit}
                     onChange={(e) => setLimit(e.target.value)}
                   >
                     <option value={10}>10</option>
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
+                    <option value={200}>200</option>
                   </select>
                 </div>
 
-                <nav aria-label="Sales pagination">
+                <nav aria-label="Stock movements pagination">
                   <ul className="pagination pagination-sm mb-0 flex-wrap">
                     <li className={`page-item ${pagination.page <= 1 ? "disabled" : ""}`}>
                       <button
@@ -526,14 +483,6 @@ export default function SalesPage() {
           )}
         </div>
       </div>
-
-      <CreateReturnModal
-        show={Boolean(selectedInvoice)}
-        invoice={selectedInvoice}
-        busy={returnBusy}
-        onClose={() => !returnBusy && setSelectedInvoice(null)}
-        onSubmit={submitReturn}
-      />
     </div>
   );
 }

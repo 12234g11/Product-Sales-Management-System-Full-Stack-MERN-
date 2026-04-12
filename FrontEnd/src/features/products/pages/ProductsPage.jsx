@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
-import { useProducts } from "../hooks/useProducts";
 import { productsApi } from "../api/productsApi";
 import AdjustStockModal from "../components/AdjustStockModal";
 import ProductMovementsModal from "../components/ProductMovementsModal";
@@ -100,9 +99,9 @@ function ProductFormModal({ show, mode, initial, busy, onClose, onSubmit }) {
     const payload = isEdit
       ? basePayload
       : {
-          ...basePayload,
-          quantity: toNumber(form.quantity),
-        };
+        ...basePayload,
+        quantity: toNumber(form.quantity),
+      };
 
     await onSubmit(payload);
   };
@@ -143,7 +142,7 @@ function ProductFormModal({ show, mode, initial, busy, onClose, onSubmit }) {
                     />
                     {isEdit ? (
                       <div className="form-text">
-                        تقدر تغيّر الكود  لكن التعديل هيتم على المنتج الحالي.
+                        تقدر تغيّر الكود لكن التعديل هيتم على المنتج الحالي.
                       </div>
                     ) : null}
                   </div>
@@ -295,10 +294,15 @@ function ConfirmDeleteModal({ show, busy, product, onClose, onConfirm }) {
             </div>
 
             <div className="modal-footer">
-              <button className="btn btn-outline-secondary" onClick={onClose} disabled={busy}>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onClose}
+                disabled={busy}
+              >
                 إلغاء
               </button>
-              <button className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+              <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
                 {busy ? "جاري الحذف..." : "حذف"}
               </button>
             </div>
@@ -311,21 +315,24 @@ function ConfirmDeleteModal({ show, busy, product, onClose, onConfirm }) {
   );
 }
 
-export default function ProductsPage() {
-  const {
-    items,
-    loading,
-    busy,
-    error,
-    fetchAll,
-    search,
-    create,
-    update,
-    remove,
-    adjustStock,
-  } = useProducts();
+const initialFilters = {
+  id: "",
+  name: "",
+  category: "",
+  page: 1,
+  limit: 20,
+};
 
-  const [filters, setFilters] = useState({ id: "", name: "", category: "" });
+export default function ProductsPage() {
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const [filters, setFilters] = useState(initialFilters);
 
   const [showForm, setShowForm] = useState(false);
   const [mode, setMode] = useState("create");
@@ -341,22 +348,67 @@ export default function ProductsPage() {
   const [showMovements, setShowMovements] = useState(false);
   const [movementProduct, setMovementProduct] = useState(null);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const location = useLocation();
+  const [paginationState, setPaginationState] = useState({
+    total: 0,
+    page: 1,
+    limit: 20,
+  });
+
+  const loadProducts = useCallback(async (nextFilters = initialFilters) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await productsApi.list(nextFilters);
+
+      setItems(Array.isArray(res?.products) ? res.products : []);
+      setPaginationState(
+        res?.pagination || {
+          total: 0,
+          page: Number(nextFilters.page || 1),
+          limit: Number(nextFilters.limit || 20),
+        }
+      );
+    } catch (e) {
+      setError(e.userMessage || "فشل تحميل المنتجات");
+      setItems([]);
+      setPaginationState({
+        total: 0,
+        page: 1,
+        limit: Number(nextFilters.limit || 20),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const applySearchParams = (next) => {
+    const params = {};
+
+    if (String(next.id || "").trim()) params.id = String(next.id).trim();
+    if (String(next.name || "").trim()) params.name = String(next.name).trim();
+    if (String(next.category || "").trim()) params.category = String(next.category).trim();
+
+    if (Number(next.page || 1) > 1) params.page = String(next.page);
+    if (Number(next.limit || 20) !== 20) params.limit = String(next.limit);
+
+    setSearchParams(params);
+  };
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+
     const next = {
-      id: searchParams.get("id") || "",
-      name: searchParams.get("name") || "",
-      category: searchParams.get("category") || "",
+      id: urlParams.get("id") || "",
+      name: urlParams.get("name") || "",
+      category: urlParams.get("category") || "",
+      page: Math.max(1, Number(urlParams.get("page") || 1)),
+      limit: Math.max(1, Number(urlParams.get("limit") || 20)),
     };
 
     setFilters(next);
-
-    if (next.id || next.name || next.category) {
-      search(next);
-    }
-  }, [location.search]);
+    loadProducts(next);
+  }, [location.search, loadProducts]);
 
   const summary = useMemo(() => {
     const total = items.length;
@@ -371,27 +423,66 @@ export default function ProductsPage() {
     return { total, units, out, low };
   }, [items]);
 
-  const applySearchParams = (next) => {
-    const params = {};
-    if (String(next.id || "").trim()) params.id = String(next.id).trim();
-    if (String(next.name || "").trim()) params.name = String(next.name).trim();
-    if (String(next.category || "").trim()) params.category = String(next.category).trim();
-    setSearchParams(params);
-  };
+  const paging = useMemo(() => {
+    const total = Math.max(0, Number(paginationState.total || 0));
+    const page = Math.max(1, Number(paginationState.page || 1));
+    const limit = Math.max(1, Number(paginationState.limit || filters.limit || 20));
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const startItem = total === 0 ? 0 : (safePage - 1) * limit + 1;
+    const endItem = total === 0 ? 0 : Math.min(safePage * limit, total);
+
+    return {
+      total,
+      page: safePage,
+      limit,
+      totalPages,
+      startItem,
+      endItem,
+    };
+  }, [paginationState, filters.limit]);
+
+  const visiblePages = useMemo(() => {
+    const pages = [];
+    const maxVisible = 5;
+
+    let start = Math.max(1, paging.page - 2);
+    let end = Math.min(paging.totalPages, start + maxVisible - 1);
+
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    for (let i = start; i <= end; i += 1) {
+      pages.push(i);
+    }
+
+    return pages;
+  }, [paging.page, paging.totalPages]);
 
   const onSearch = async (e) => {
     e.preventDefault();
-    applySearchParams(filters);
-    if (!filters.id && !filters.name && !filters.category) {
-      await fetchAll();
-    }
+    applySearchParams({ ...filters, page: 1 });
   };
 
   const onReset = async () => {
-    const empty = { id: "", name: "", category: "" };
-    setFilters(empty);
-    setSearchParams({});
-    await fetchAll();
+    applySearchParams(initialFilters);
+  };
+
+  const setPage = (page) => {
+    const nextPage = Number(page);
+    if (!Number.isFinite(nextPage)) return;
+    if (nextPage < 1 || nextPage > paging.totalPages) return;
+    if (nextPage === paging.page) return;
+
+    applySearchParams({ ...filters, page: nextPage });
+  };
+
+  const setLimit = (limit) => {
+    const nextLimit = Number(limit);
+    if (!Number.isFinite(nextLimit) || nextLimit <= 0) return;
+
+    applySearchParams({ ...filters, page: 1, limit: nextLimit });
   };
 
   const openCreate = () => {
@@ -409,9 +500,24 @@ export default function ProductsPage() {
   };
 
   const submitForm = async (payload) => {
-    if (mode === "create") await create(payload);
-    else await update(originalId, payload);
-    setShowForm(false);
+    setBusy(true);
+    setError("");
+
+    try {
+      if (mode === "create") {
+        await productsApi.create(payload);
+      } else {
+        await productsApi.update(originalId, payload);
+      }
+
+      setShowForm(false);
+      await loadProducts(filters);
+    } catch (e) {
+      setError(e.userMessage || (mode === "create" ? "فشل إضافة المنتج" : "فشل تعديل المنتج"));
+      throw e;
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openDelete = (p) => {
@@ -420,9 +526,19 @@ export default function ProductsPage() {
   };
 
   const confirmDelete = async () => {
-    await remove(deleting.id);
-    setShowDelete(false);
-    setDeleting(null);
+    setBusy(true);
+    setError("");
+
+    try {
+      await productsApi.remove(deleting.id);
+      setShowDelete(false);
+      setDeleting(null);
+      await loadProducts(filters);
+    } catch (e) {
+      setError(e.userMessage || "فشل حذف المنتج");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openAdjust = (p) => {
@@ -431,9 +547,20 @@ export default function ProductsPage() {
   };
 
   const submitAdjust = async (payload) => {
-    await adjustStock(adjusting.id, payload);
-    setShowAdjust(false);
-    setAdjusting(null);
+    setBusy(true);
+    setError("");
+
+    try {
+      await productsApi.adjustStock(adjusting.id, payload);
+      setShowAdjust(false);
+      setAdjusting(null);
+      await loadProducts(filters);
+    } catch (e) {
+      setError(e.userMessage || "فشل تسوية المخزون");
+      throw e;
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openMovements = (p) => {
@@ -447,12 +574,15 @@ export default function ProductsPage() {
         <div className="mb-2">
           <h3 className="m-0 text-white">المنتجات</h3>
           <div className="text-white small">
-            عدد المنتجات: {formatNumber(summary.total)} • إجمالي الوحدات:{" "}
+            عدد المنتجات في الصفحة: {formatNumber(summary.total)} • إجمالي الوحدات في الصفحة:{" "}
             {formatNumber(summary.units)}
           </div>
           <div className="text-white small mt-1">
-            أقل من الحد الأدنى: {formatNumber(summary.low)} • نفد المخزون:{" "}
+            أقل من الحد الأدنى في الصفحة: {formatNumber(summary.low)} • نفد المخزون في الصفحة:{" "}
             {formatNumber(summary.out)}
+          </div>
+          <div className="text-white small mt-1">
+            إجمالي النتائج: {formatNumber(paging.total)}
           </div>
         </div>
 
@@ -460,7 +590,11 @@ export default function ProductsPage() {
           <button className="btn btn-primary" onClick={openCreate}>
             إضافة منتج
           </button>
-          <button className="btn btn-outline-secondary" onClick={fetchAll} disabled={loading}>
+          <button
+            className="btn btn-outline-secondary"
+            onClick={() => loadProducts(filters)}
+            disabled={loading}
+          >
             تحديث
           </button>
         </div>
@@ -470,12 +604,15 @@ export default function ProductsPage() {
         <div>
           <h3 className="m-0 text-white">المنتجات</h3>
           <div className="text-white small">
-            عدد المنتجات: {formatNumber(summary.total)} • إجمالي الوحدات:{" "}
+            عدد المنتجات في الصفحة: {formatNumber(summary.total)} • إجمالي الوحدات في الصفحة:{" "}
             {formatNumber(summary.units)}
           </div>
           <div className="text-white small mt-1">
-            أقل من الحد الأدنى: {formatNumber(summary.low)} • نفد المخزون:{" "}
+            أقل من الحد الأدنى في الصفحة: {formatNumber(summary.low)} • نفد المخزون في الصفحة:{" "}
             {formatNumber(summary.out)}
+          </div>
+          <div className="text-white small mt-1">
+            إجمالي النتائج: {formatNumber(paging.total)}
           </div>
         </div>
 
@@ -483,7 +620,11 @@ export default function ProductsPage() {
           <button className="btn btn-primary" onClick={openCreate}>
             إضافة منتج
           </button>
-          <button className="btn btn-outline-secondary" onClick={fetchAll} disabled={loading}>
+          <button
+            className="btn btn-outline-secondary"
+            onClick={() => loadProducts(filters)}
+            disabled={loading}
+          >
             تحديث
           </button>
         </div>
@@ -519,6 +660,21 @@ export default function ProductsPage() {
                 value={filters.category}
                 onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}
               />
+            </div>
+
+            <div>
+              <label className="form-label">عدد العناصر</label>
+              <select
+                className="form-select"
+                value={filters.limit}
+                onChange={(e) => setLimit(e.target.value)}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
             </div>
 
             <div className="row g-2">
@@ -572,12 +728,27 @@ export default function ProductsPage() {
               />
             </div>
 
-            <div className="col-12 col-md-2 d-flex gap-2 flex-row-reverse">
-              <button className="btn btn-outline-primary w-100" type="submit" disabled={loading}>
+            <div className="col-12 col-md-2">
+              <label className="form-label">عدد العناصر</label>
+              <select
+                className="form-select"
+                value={filters.limit}
+                onChange={(e) => setLimit(e.target.value)}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+
+            <div className="col-12 d-flex gap-2 flex-row-reverse mt-2">
+              <button className="btn btn-outline-primary" type="submit" disabled={loading}>
                 بحث
               </button>
               <button
-                className="btn btn-outline-secondary w-100"
+                className="btn btn-outline-secondary"
                 type="button"
                 onClick={onReset}
                 disabled={loading}
@@ -596,74 +767,178 @@ export default function ProductsPage() {
           ) : items.length === 0 ? (
             <div className="text-center py-4 text-secondary">لا توجد منتجات</div>
           ) : (
-            <div className="table-responsive">
-              <table className="table table-hover align-middle">
-                <thead>
-                  <tr>
-                    <th className="text-end">الكود</th>
-                    <th className="text-end">الاسم</th>
-                    <th className="text-end">الفئة</th>
-                    <th className="text-end">الكمية</th>
-                    <th className="text-end">الحد الأدنى</th>
-                    <th className="text-end">شراء</th>
-                    <th className="text-end">بيع</th>
-                    <th className="text-end">الحالة</th>
-                    <th className="text-end" style={{ width: 1 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((p) => (
-                    <tr key={p.id}>
-                      <td className="text-end fw-semibold">{p.id}</td>
-                      <td className="text-end">{p.name}</td>
-                      <td className="text-end">{p.category}</td>
-                      <td className="text-end">{formatNumber(p.quantity)}</td>
-                      <td className="text-end">{formatNumber(p.minStock)}</td>
-                      <td className="text-end">{formatNumber(p.purchasePrice)}</td>
-                      <td className="text-end">{formatNumber(p.salePrice)}</td>
-                      <td className="text-end">
-                        <ProductStatusBadge product={p} />
-                      </td>
-                      <td className="text-end">
-                        <div className="d-flex gap-2 justify-content-end flex-wrap flex-md-nowrap">
-                          <button
-                            className="btn btn-sm btn-outline-primary"
-                            onClick={() => openEdit(p)}
-                            disabled={busy}
-                          >
-                            تعديل
-                          </button>
-
-                          <button
-                            className="btn btn-sm btn-outline-warning"
-                            onClick={() => openAdjust(p)}
-                            disabled={busy}
-                          >
-                            تسوية
-                          </button>
-
-                          <button
-                            className="btn btn-sm btn-outline-info"
-                            onClick={() => openMovements(p)}
-                            disabled={busy}
-                          >
-                            السجل
-                          </button>
-
-                          <button
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => openDelete(p)}
-                            disabled={busy}
-                          >
-                            حذف
-                          </button>
-                        </div>
-                      </td>
+            <>
+              <div className="table-responsive">
+                <table className="table table-hover align-middle">
+                  <thead>
+                    <tr>
+                      <th className="text-end">الكود</th>
+                      <th className="text-end">الاسم</th>
+                      <th className="text-end">الفئة</th>
+                      <th className="text-end">الكمية</th>
+                      <th className="text-end">الحد الأدنى</th>
+                      <th className="text-end">شراء</th>
+                      <th className="text-end">بيع</th>
+                      <th className="text-end">الحالة</th>
+                      <th className="text-end" style={{ width: 1 }}></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {items.map((p) => (
+                      <tr key={p.id}>
+                        <td className="text-end fw-semibold">{p.id}</td>
+                        <td className="text-end">{p.name}</td>
+                        <td className="text-end">{p.category}</td>
+                        <td className="text-end">{formatNumber(p.quantity)}</td>
+                        <td className="text-end">{formatNumber(p.minStock)}</td>
+                        <td className="text-end">{formatNumber(p.purchasePrice)}</td>
+                        <td className="text-end">{formatNumber(p.salePrice)}</td>
+                        <td className="text-end">
+                          <ProductStatusBadge product={p} />
+                        </td>
+                        <td className="text-end">
+                          <div className="d-flex gap-2 justify-content-end flex-wrap flex-md-nowrap">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => openEdit(p)}
+                              disabled={busy}
+                            >
+                              تعديل
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-warning"
+                              onClick={() => openAdjust(p)}
+                              disabled={busy}
+                            >
+                              تسوية
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-info"
+                              onClick={() => openMovements(p)}
+                              disabled={busy}
+                            >
+                              السجل
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => openDelete(p)}
+                              disabled={busy}
+                            >
+                              حذف
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-3">
+                <div className="small text-secondary">
+                  عرض {formatNumber(paging.startItem)} - {formatNumber(paging.endItem)} من{" "}
+                  {formatNumber(paging.total)}
+                </div>
+
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <label className="small text-secondary mb-0">عدد العناصر</label>
+                  <select
+                    className="form-select form-select-sm"
+                    style={{ width: 90 }}
+                    value={filters.limit}
+                    onChange={(e) => setLimit(e.target.value)}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+
+                <nav aria-label="Products pagination">
+                  <ul className="pagination pagination-sm mb-0 flex-wrap">
+                    <li className={`page-item ${paging.page <= 1 ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => setPage(paging.page - 1)}
+                        disabled={paging.page <= 1}
+                      >
+                        السابق
+                      </button>
+                    </li>
+
+                    {visiblePages[0] > 1 && (
+                      <>
+                        <li className="page-item">
+                          <button type="button" className="page-link" onClick={() => setPage(1)}>
+                            1
+                          </button>
+                        </li>
+                        {visiblePages[0] > 2 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                      </>
+                    )}
+
+                    {visiblePages.map((pageNumber) => (
+                      <li
+                        key={pageNumber}
+                        className={`page-item ${paging.page === pageNumber ? "active" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="page-link"
+                          onClick={() => setPage(pageNumber)}
+                        >
+                          {pageNumber}
+                        </button>
+                      </li>
+                    ))}
+
+                    {visiblePages[visiblePages.length - 1] < paging.totalPages && (
+                      <>
+                        {visiblePages[visiblePages.length - 1] < paging.totalPages - 1 && (
+                          <li className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        )}
+                        <li className="page-item">
+                          <button
+                            type="button"
+                            className="page-link"
+                            onClick={() => setPage(paging.totalPages)}
+                          >
+                            {paging.totalPages}
+                          </button>
+                        </li>
+                      </>
+                    )}
+
+                    <li className={`page-item ${paging.page >= paging.totalPages ? "disabled" : ""}`}>
+                      <button
+                        type="button"
+                        className="page-link"
+                        onClick={() => setPage(paging.page + 1)}
+                        disabled={paging.page >= paging.totalPages}
+                      >
+                        التالي
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              </div>
+            </>
           )}
         </div>
       </div>

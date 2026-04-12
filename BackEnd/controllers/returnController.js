@@ -3,6 +3,7 @@ import SaleReturn from "../models/SaleReturn.js";
 import SaleInvoice from "../models/SaleInvoice.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
+import StockMovement from "../models/StockMovement.js";
 import { sendSuccess, sendFail, sendError } from "../utils/jsend.js";
 import { clean } from "../utils/cleanResponseForReturns.js";
 import { round2 } from "../utils/invoiceTotals.js";
@@ -41,11 +42,16 @@ const buildReturnItemsFromBody = (invoiceDoc, bodyItems) => {
       return { ok: false, error: { qtyReturned: "qtyReturned must be a positive integer" } };
     }
     if (!["restocked", "damaged"].includes(returnStockStatus)) {
-      return { ok: false, error: { returnStockStatus: "returnStockStatus must be restocked or damaged" } };
+      return {
+        ok: false,
+        error: { returnStockStatus: "returnStockStatus must be restocked or damaged" },
+      };
     }
 
     const invItem = map.get(productId);
-    if (!invItem) return { ok: false, error: { productId: `Product ${productId} not found in invoice` } };
+    if (!invItem) {
+      return { ok: false, error: { productId: `Product ${productId} not found in invoice` } };
+    }
 
     const sold = Number(invItem.quantity || 0);
     const alreadyReturned = Number(invItem.returnedQty || 0);
@@ -54,7 +60,14 @@ const buildReturnItemsFromBody = (invoiceDoc, bodyItems) => {
     if (qtyReturned > available) {
       return {
         ok: false,
-        error: { qtyReturned: "qtyReturned exceeds available return quantity", productId, sold, alreadyReturned, available, requested: qtyReturned },
+        error: {
+          qtyReturned: "qtyReturned exceeds available return quantity",
+          productId,
+          sold,
+          alreadyReturned,
+          available,
+          requested: qtyReturned,
+        },
       };
     }
 
@@ -64,7 +77,7 @@ const buildReturnItemsFromBody = (invoiceDoc, bodyItems) => {
 
     let unitNet = Number(invItem.unitNetPrice || 0);
     if (!Number.isFinite(unitNet) || unitNet < 0) unitNet = 0;
-    if (unitNet === 0) unitNet = salePrice; // fallback
+    if (unitNet === 0) unitNet = salePrice;
 
     const unitDiscountAmount = round2(Math.max(0, salePrice - unitNet));
     const lineRefundAmount = round2(unitNet * qtyReturned);
@@ -121,7 +134,9 @@ const buildReturnsFilters = (req) => {
   const productName = req.query.productName ? String(req.query.productName).trim() : "";
   const category = req.query.category ? String(req.query.category).trim() : "";
 
-  const createdByUserId = req.query.createdByUserId ? String(req.query.createdByUserId).trim() : "";
+  const createdByUserId = req.query.createdByUserId
+    ? String(req.query.createdByUserId).trim()
+    : "";
   const createdByName = req.query.createdByName ? String(req.query.createdByName).trim() : "";
   const cashierName = req.query.cashierName ? String(req.query.cashierName).trim() : "";
 
@@ -133,13 +148,18 @@ const buildReturnsFilters = (req) => {
 
   if (stockStatus) {
     if (!["restocked", "damaged", "mixed"].includes(stockStatus)) {
-      return { ok: false, error: { stockStatus: "stockStatus must be restocked, damaged, or mixed" } };
+      return {
+        ok: false,
+        error: { stockStatus: "stockStatus must be restocked, damaged, or mixed" },
+      };
     }
     filters.stockStatus = stockStatus;
   }
 
   if (invoiceId) {
-    if (!mongoose.Types.ObjectId.isValid(invoiceId)) return { ok: false, error: { invoiceId: "Invalid invoiceId" } };
+    if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
+      return { ok: false, error: { invoiceId: "Invalid invoiceId" } };
+    }
     filters.invoiceId = new mongoose.Types.ObjectId(invoiceId);
   }
 
@@ -153,22 +173,31 @@ const buildReturnsFilters = (req) => {
     filters.$or = [{ invoiceCode: { $regex: r } }, { invoiceName: { $regex: r } }];
   }
 
-  if (cashierName) filters.invoiceCashierName = { $regex: new RegExp(escapeRegex(cashierName), "i") };
+  if (cashierName) {
+    filters.invoiceCashierName = { $regex: new RegExp(escapeRegex(cashierName), "i") };
+  }
 
   if (createdByUserId) {
-    if (!mongoose.Types.ObjectId.isValid(createdByUserId)) return { ok: false, error: { createdByUserId: "Invalid createdByUserId" } };
+    if (!mongoose.Types.ObjectId.isValid(createdByUserId)) {
+      return { ok: false, error: { createdByUserId: "Invalid createdByUserId" } };
+    }
     filters.createdByUserId = new mongoose.Types.ObjectId(createdByUserId);
   }
 
-  if (createdByName) filters.createdByName = { $regex: new RegExp(escapeRegex(createdByName), "i") };
+  if (createdByName) {
+    filters.createdByName = { $regex: new RegExp(escapeRegex(createdByName), "i") };
+  }
 
   let from = fromRaw ? parseDateStart(fromRaw) : null;
   let to = toRaw ? parseDateEnd(toRaw) : null;
 
   if (!from && !to && Number.isFinite(daysRaw) && daysRaw > 0) {
     const now = new Date();
-    to = new Date(now); to.setHours(23, 59, 59, 999);
-    from = new Date(now); from.setDate(from.getDate() - (daysRaw - 1)); from.setHours(0, 0, 0, 0);
+    to = new Date(now);
+    to.setHours(23, 59, 59, 999);
+    from = new Date(now);
+    from.setDate(from.getDate() - (daysRaw - 1));
+    from.setHours(0, 0, 0, 0);
   }
 
   if (from || to) {
@@ -182,13 +211,19 @@ const buildReturnsFilters = (req) => {
   if (productName) elem.productName = { $regex: new RegExp(escapeRegex(productName), "i") };
   if (category) elem.productCategory = { $regex: new RegExp(escapeRegex(category), "i") };
 
-  // ✅ damaged-only view even if return is mixed
   if (itemStatus) {
-    if (!["restocked", "damaged"].includes(itemStatus)) return { ok: false, error: { itemStatus: "itemStatus must be restocked or damaged" } };
+    if (!["restocked", "damaged"].includes(itemStatus)) {
+      return {
+        ok: false,
+        error: { itemStatus: "itemStatus must be restocked or damaged" },
+      };
+    }
     elem.returnStockStatus = itemStatus;
   }
 
-  if (Object.keys(elem).length > 0) filters.items = { $elemMatch: elem };
+  if (Object.keys(elem).length > 0) {
+    filters.items = { $elemMatch: elem };
+  }
 
   return { ok: true, filters };
 };
@@ -220,10 +255,11 @@ const createReturn = async (req, res) => {
 
     let bodyItems = Array.isArray(items) ? items : null;
 
-    // full without items => return all remaining
     if (!bodyItems) {
       returnType = returnType || "full";
-      const defStatus = ["restocked", "damaged"].includes(String(defaultStockStatus || "restocked"))
+      const defStatus = ["restocked", "damaged"].includes(
+        String(defaultStockStatus || "restocked")
+      )
         ? String(defaultStockStatus || "restocked")
         : "restocked";
 
@@ -233,7 +269,11 @@ const createReturn = async (req, res) => {
           const returned = Number(it.returnedQty || 0);
           const available = sold - returned;
           if (available <= 0) return null;
-          return { productId: it.productId, qtyReturned: available, returnStockStatus: defStatus };
+          return {
+            productId: it.productId,
+            qtyReturned: available,
+            returnStockStatus: defStatus,
+          };
         })
         .filter(Boolean);
     } else {
@@ -251,13 +291,25 @@ const createReturn = async (req, res) => {
     const stockStatus = hasRestocked && hasDamaged ? "mixed" : hasRestocked ? "restocked" : "damaged";
 
     const totalRefundAmount = round2(returnItems.reduce((s, x) => s + x.lineRefundAmount, 0));
-    const totalRefundRestocked = round2(returnItems.filter((x) => x.returnStockStatus === "restocked").reduce((s, x) => s + x.lineRefundAmount, 0));
-    const totalRefundDamaged = round2(returnItems.filter((x) => x.returnStockStatus === "damaged").reduce((s, x) => s + x.lineRefundAmount, 0));
+    const totalRefundRestocked = round2(
+      returnItems
+        .filter((x) => x.returnStockStatus === "restocked")
+        .reduce((s, x) => s + x.lineRefundAmount, 0)
+    );
+    const totalRefundDamaged = round2(
+      returnItems
+        .filter((x) => x.returnStockStatus === "damaged")
+        .reduce((s, x) => s + x.lineRefundAmount, 0)
+    );
     const totalReturnedQty = returnItems.reduce((s, x) => s + x.qtyReturned, 0);
 
-    // 1) Restock products first (rollback safe)
     const restockApplied = [];
+    const invoiceChanges = [];
+    const movementIds = [];
+    let createdReturn = null;
+
     try {
+      // 1) Restock products
       for (const it of returnItems) {
         if (it.returnStockStatus !== "restocked") continue;
 
@@ -265,51 +317,38 @@ const createReturn = async (req, res) => {
           { workspaceId, id: String(it.productId) },
           { $inc: { quantity: it.qtyReturned } },
           { new: true }
-        );
+        ).select("id name category quantity");
 
         if (!p) throw new Error(`PRODUCT_NOT_FOUND:${it.productId}`);
-        restockApplied.push({ productId: String(it.productId), qty: it.qtyReturned });
-      }
-    } catch (e) {
-      for (const r of restockApplied) {
-        await Product.updateOne({ workspaceId, id: r.productId }, { $inc: { quantity: -r.qty } });
-      }
-      const msg = String(e?.message || "");
-      if (msg.startsWith("PRODUCT_NOT_FOUND:")) return sendFail(res, { productId: `Product not found: ${msg.split(":")[1]}` }, 404);
-      return sendError(res, e.message, 500);
-    }
 
-    // 2) Update invoice returnedQty + returnStatus + totalRefundedAmount
-    const invoiceChanges = [];
-    for (const it of returnItems) {
-      const invItem = inv.items.id(it._invoiceItemId);
-      invItem.returnedQty = Number(invItem.returnedQty || 0) + it.qtyReturned;
-      invoiceChanges.push({ _invoiceItemId: it._invoiceItemId, qty: it.qtyReturned });
-    }
+        const afterQty = Number(p.quantity || 0);
+        const beforeQty = afterQty - it.qtyReturned;
 
-    inv.totalRefundedAmount = round2(Number(inv.totalRefundedAmount || 0) + totalRefundAmount);
-    inv.returnStatus = getReturnStatusForInvoice(inv);
-
-    try {
-      await inv.save();
-    } catch (e) {
-      for (const ch of invoiceChanges) {
-        const invItem = inv.items.id(ch._invoiceItemId);
-        if (invItem) invItem.returnedQty = Math.max(0, Number(invItem.returnedQty || 0) - ch.qty);
+        restockApplied.push({
+          productId: String(p.id),
+          productName: p.name,
+          productCategory: p.category || "",
+          qty: it.qtyReturned,
+          beforeQty,
+          afterQty,
+        });
       }
-      inv.totalRefundedAmount = round2(Math.max(0, Number(inv.totalRefundedAmount || 0) - totalRefundAmount));
+
+      // 2) Update invoice
+      for (const it of returnItems) {
+        const invItem = inv.items.id(it._invoiceItemId);
+        invItem.returnedQty = Number(invItem.returnedQty || 0) + it.qtyReturned;
+        invoiceChanges.push({ _invoiceItemId: it._invoiceItemId, qty: it.qtyReturned });
+      }
+
+      inv.totalRefundedAmount = round2(
+        Number(inv.totalRefundedAmount || 0) + totalRefundAmount
+      );
       inv.returnStatus = getReturnStatusForInvoice(inv);
-      await inv.save().catch(() => {});
+      await inv.save();
 
-      for (const r of restockApplied) {
-        await Product.updateOne({ workspaceId, id: r.productId }, { $inc: { quantity: -r.qty } });
-      }
-      return sendError(res, e.message, 500);
-    }
-
-    // 3) Create SaleReturn record
-    try {
-      const ret = await SaleReturn.create({
+      // 3) Create SaleReturn
+      createdReturn = await SaleReturn.create({
         workspaceId,
 
         invoiceId: inv._id,
@@ -350,19 +389,66 @@ const createReturn = async (req, res) => {
         })),
       });
 
-      return sendSuccess(res, { return: clean(ret, { withItems: true }) }, 201);
+      // 4) Create stock movement records for restocked items only
+      for (const mv of restockApplied) {
+        const createdMovement = await StockMovement.create({
+          workspaceId,
+          productId: mv.productId,
+          productName: mv.productName,
+          productCategory: mv.productCategory,
+          type: "sale_return",
+          qtyDelta: mv.qty,
+          beforeQty: mv.beforeQty,
+          afterQty: mv.afterQty,
+          refType: "SaleReturn",
+          refId: String(createdReturn._id),
+          refCode: String(inv.invoiceCode || ""),
+          reason: "",
+          note: "",
+          performedByUserId: req.user.userId,
+          performedByName: creator.name,
+        });
+
+        movementIds.push(String(createdMovement._id));
+      }
+
+      return sendSuccess(res, { return: clean(createdReturn, { withItems: true }) }, 201);
     } catch (e) {
-      // rollback invoice + products
+      if (movementIds.length > 0) {
+        await StockMovement.deleteMany({ _id: { $in: movementIds } }).catch(() => {});
+      }
+
+      if (createdReturn?._id) {
+        await SaleReturn.deleteOne({ _id: createdReturn._id }).catch(() => {});
+      }
+
       for (const ch of invoiceChanges) {
         const invItem = inv.items.id(ch._invoiceItemId);
-        if (invItem) invItem.returnedQty = Math.max(0, Number(invItem.returnedQty || 0) - ch.qty);
+        if (invItem) {
+          invItem.returnedQty = Math.max(0, Number(invItem.returnedQty || 0) - ch.qty);
+        }
       }
-      inv.totalRefundedAmount = round2(Math.max(0, Number(inv.totalRefundedAmount || 0) - totalRefundAmount));
+
+      inv.totalRefundedAmount = round2(
+        Math.max(0, Number(inv.totalRefundedAmount || 0) - totalRefundAmount)
+      );
       inv.returnStatus = getReturnStatusForInvoice(inv);
       await inv.save().catch(() => {});
 
       for (const r of restockApplied) {
-        await Product.updateOne({ workspaceId, id: r.productId }, { $inc: { quantity: -r.qty } });
+        await Product.updateOne(
+          { workspaceId, id: r.productId },
+          { $inc: { quantity: -r.qty } }
+        ).catch(() => {});
+      }
+
+      const msg = String(e?.message || "");
+      if (msg.startsWith("PRODUCT_NOT_FOUND:")) {
+        return sendFail(
+          res,
+          { productId: `Product not found: ${msg.split(":")[1]}` },
+          404
+        );
       }
 
       return sendError(res, e.message, 500);
@@ -408,7 +494,9 @@ const getReturnById = async (req, res) => {
     const workspaceId = req.user.workspaceId;
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) return sendFail(res, { id: "Invalid return id" }, 400);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return sendFail(res, { id: "Invalid return id" }, 400);
+    }
 
     const ret = await SaleReturn.findOne({ _id: id, workspaceId });
     if (!ret) return sendFail(res, { id: "Return not found" }, 404);
@@ -419,7 +507,7 @@ const getReturnById = async (req, res) => {
   }
 };
 
-// GET /api/returns/summary?days=30&itemStatus=damaged&from=...&to=...
+// GET /api/returns/summary
 const returnsSummary = async (req, res) => {
   try {
     const built = buildReturnsFilters(req);

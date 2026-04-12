@@ -13,6 +13,7 @@ import DashboardPage from "../features/dashboard/pages/DashboardPage";
 import ProductsPage from "../features/products/pages/ProductsPage";
 import SalesPage from "../features/sales/pages/SalesPage";
 import NewSalePage from "../features/sales/pages/NewSalePage";
+import SaleReturnsPage from "../features/sales/pages/SaleReturnsPage";
 import UsersPage from "../features/users/pages/UsersPage";
 
 import NotFoundPage from "../pages/NotFoundPage";
@@ -25,6 +26,8 @@ import SupplierDetailsPage from "../features/suppliers/pages/SupplierDetailsPage
 import PurchaseInvoicesPage from "../features/purchases/pages/PurchaseInvoicesPage";
 import CreatePurchaseInvoicePage from "../features/purchases/pages/CreatePurchaseInvoicePage";
 import PurchaseInvoiceDetailsPage from "../features/purchases/pages/PurchaseInvoiceDetailsPage";
+
+import StockMovementsPage from "../features/stock-movements/pages/StockMovementsPage";
 
 function HomeRedirect() {
   const { isAuthenticated, user } = useAuth();
@@ -40,13 +43,11 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
 
-      {/* Public */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
       </Route>
 
-      {/* Protected */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/products" element={<ProductsPage />} />
@@ -61,8 +62,11 @@ export default function AppRoutes() {
 
           <Route path="/sales" element={<SalesPage />} />
           <Route path="/sales/new" element={<NewSalePage />} />
+          <Route path="/sales/:id" element={<NewSalePage />} />
+          <Route path="/sales/returns" element={<SaleReturnsPage />} />
 
-          {/* Admin Only */}
+          <Route path="/stock-movements" element={<StockMovementsPage />} />
+
           <Route element={<AdminRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/users" element={<UsersPage />} />
