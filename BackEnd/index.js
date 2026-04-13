@@ -1,6 +1,4 @@
 import express from "express";
-import connectDB from "./config/db.js";
-import cors from "cors";
 import dotenv from "dotenv";
 import productRoutes from "./routes/productRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
@@ -17,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import YAML from "yaml";
 import { fileURLToPath } from "url";
+import { configureServer, startServer } from "./config/server.js";
 
 dotenv.config();
 
@@ -32,10 +31,7 @@ console.log("Swagger servers:", swaggerDocument.servers);
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-app.use(cors({ origin: "http://localhost:5173" }));
-app.use(express.json());
-
-connectDB(process.env.MONGO_URI);
+configureServer(app);
 
 app.use("/api/products", productRoutes);
 app.use("/api/dashboard", dashboardRoutes);
@@ -50,5 +46,4 @@ app.use("/api/stock-movements", stockMovementRoutes);
 
 app.get("/", (req, res) => res.send("Server is running"));
 
-const PORT = process.env.PORT || 5002;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+startServer(app);
