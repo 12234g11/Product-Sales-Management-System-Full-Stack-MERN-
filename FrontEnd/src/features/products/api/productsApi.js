@@ -74,7 +74,7 @@ export const productsApi = {
       }
     );
 
-    return unwrap(res)?.movements ?? unwrap(res);
+    return unwrap(res);
   },
 
   async autoComplete(query) {
