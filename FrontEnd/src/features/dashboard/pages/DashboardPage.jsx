@@ -444,12 +444,6 @@ export default function DashboardPage() {
                                                 </div>
                                             )}
 
-                                            {!loading && Number(stockStatus?.extra?.noMinStock || 0) > 0 && (
-                                                <div className="small text-secondary mt-3">
-                                                    * منتجات بدون حد أدنى (minStock):{" "}
-                                                    {formatNumber(stockStatus.extra.noMinStock)}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>

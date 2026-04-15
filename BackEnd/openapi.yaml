@@ -3,19 +3,23 @@ info:
   title: Product Management System API
   version: "1.0.0"
   description: |
-    Backend API for a multi-workspace Product Management System (MERN).
-    Response format follows a JSend-like structure:
-    - Success: { status: "success", data: ... }
-    - Fail:    { status: "fail", data: ... }
-    - Error:   { status: "error", message: "..." }
-
+    Full OpenAPI spec generated from the current Express routes and controllers.
+    Main response shape follows a JSend-like pattern:
+    - success: { status: "success", data: ... }
+    - fail:    { status: "fail", data: ... }
+    - error:   { status: "error", message: "..." }
 servers:
   - url: http://localhost:5001
+    description: Local development
 
 tags:
   - name: Auth
   - name: Products
-  - name: Sales
+  - name: Stock Movements
+  - name: Suppliers
+  - name: Purchase Invoices
+  - name: Sale Invoices
+  - name: Returns
   - name: Dashboard
   - name: Users
   - name: Workspaces
@@ -27,44 +31,107 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    MongoObjectIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        $ref: '#/components/schemas/MongoId'
+    InvoiceIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        $ref: '#/components/schemas/MongoId'
+    ItemIdParam:
+      in: path
+      name: itemId
+      required: true
+      schema:
+        $ref: '#/components/schemas/MongoId'
+    UserIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        $ref: '#/components/schemas/MongoId'
+    SupplierIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        $ref: '#/components/schemas/MongoId'
+    ProductBusinessIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      description: Business product id, not MongoDB _id.
+      example: P001
+
   schemas:
     MongoId:
       type: string
       description: MongoDB ObjectId
-      pattern: "^[a-fA-F0-9]{24}$"
-      example: "65c8d2f8a1b2c3d4e5f67890"
+      pattern: '^[a-fA-F0-9]{24}$'
+      example: 65c8d2f8a1b2c3d4e5f67890
 
-    JSendSuccess:
-      type: object
-      required: [status, data]
-      properties:
-        status:
-          type: string
-          enum: [success]
-        data:
-          type: object
-          description: Payload for successful responses
-
-    JSendFail:
-      type: object
-      required: [status, data]
-      properties:
-        status:
-          type: string
-          enum: [fail]
-        data:
-          type: object
-          description: Validation/business errors (field map or message)
+    StatusSuccess:
+      type: string
+      enum: [success]
+    StatusFail:
+      type: string
+      enum: [fail]
+    StatusError:
+      type: string
+      enum: [error]
 
     JSendError:
       type: object
       required: [status, message]
       properties:
         status:
-          type: string
-          enum: [error]
+          $ref: '#/components/schemas/StatusError'
         message:
           type: string
+          example: "Unauthorized: Invalid token"
+
+    JSendFail:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusFail'
+        data:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+
+    EmptySuccess:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 50
+        total:
+          type: integer
+          example: 120
 
     AuthRegisterRequest:
       type: object
@@ -72,18 +139,18 @@ components:
       properties:
         workspaceName:
           type: string
-          example: "My Store"
+          example: My Store
         name:
           type: string
-          example: "Admin"
+          example: Admin
         email:
           type: string
           format: email
-          example: "admin@mail.com"
+          example: admin@mail.com
         password:
           type: string
           minLength: 6
-          example: "123456"
+          example: '123456'
 
     AuthLoginRequest:
       type: object
@@ -92,17 +159,33 @@ components:
         email:
           type: string
           format: email
-          example: "admin@mail.com"
+          example: admin@mail.com
         password:
           type: string
-          example: "123456"
+          example: '123456'
+
+    WorkspacePublic:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
+        name:
+          type: string
+          example: My Store
+        ownerUserId:
+          $ref: '#/components/schemas/MongoId'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     AuthUser:
       type: object
-      required: [id, name, email, role, workspaceId]
       properties:
         id:
-          $ref: "#/components/schemas/MongoId"
+          $ref: '#/components/schemas/MongoId'
         name:
           type: string
         email:
@@ -112,44 +195,61 @@ components:
           type: string
           enum: [admin, user]
         workspaceId:
-          $ref: "#/components/schemas/MongoId"
+          $ref: '#/components/schemas/MongoId'
+        workspaceName:
+          type: string
+          nullable: true
 
-    WorkspacePublic:
+    AuthSuccessResponse:
       type: object
-      required: [id, name, ownerUserId]
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            user:
+              $ref: '#/components/schemas/AuthUser'
+
+    RegisterSuccessResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            user:
+              $ref: '#/components/schemas/AuthUser'
+
+    Product:
+      type: object
       properties:
         id:
-          $ref: "#/components/schemas/MongoId"
+          type: string
+          example: P001
         name:
           type: string
-        ownerUserId:
-          $ref: "#/components/schemas/MongoId"
-
-    ProductPublic:
-      type: object
-      description: |
-        Product object returned by the API. The route parameter `{id}` refers to the business product id (Product.id),
-        not the MongoDB `_id`.
-      properties:
-        _id:
-          $ref: "#/components/schemas/MongoId"
-          description: MongoDB document id (may be omitted by the API clean() util)
-        id:
-          type: string
-          description: Business product id (unique per workspace)
-          example: "P001"
-        name:
-          type: string
-          example: "Oil"
+          example: Engine Oil
         category:
           type: string
-          example: "motor"
+          example: Lubricants
         purchasePrice:
           type: number
           example: 50
         salePrice:
           type: number
           example: 70
+        minStock:
+          type: integer
+          minimum: 0
+          example: 5
         quantity:
           type: integer
           minimum: 0
@@ -163,17 +263,17 @@ components:
 
     ProductCreateRequest:
       type: object
-      required: [id, name, category, purchasePrice, salePrice, quantity]
+      required: [id, name, category, purchasePrice, salePrice]
       properties:
         id:
           type: string
-          example: "P001"
+          example: P001
         name:
           type: string
-          example: "Oil"
+          example: Engine Oil
         category:
           type: string
-          example: "motor"
+          example: Lubricants
         purchasePrice:
           type: number
           minimum: 0
@@ -185,19 +285,25 @@ components:
         quantity:
           type: integer
           minimum: 0
+          default: 0
           example: 20
+        minStock:
+          type: integer
+          minimum: 0
+          default: 0
+          example: 5
         createdAt:
           type: string
           format: date-time
-          description: Optional. If not provided, server timestamps are used.
+          description: Optional backward-compatible field.
 
     ProductUpdateRequest:
       type: object
-      description: Any subset of product fields. If `id` is changed, the new id must be unique in the same workspace.
+      description: quantity is not editable here.
       properties:
         id:
           type: string
-          example: "P002"
+          example: P002
         name:
           type: string
         category:
@@ -208,40 +314,107 @@ components:
         salePrice:
           type: number
           minimum: 0
-        quantity:
+        minStock:
           type: integer
           minimum: 0
 
-    SalePublic:
+    ProductAdjustStockRequest:
+      type: object
+      required: [reason]
+      properties:
+        mode:
+          type: string
+          enum: [set, delta]
+          example: set
+        newQuantity:
+          type: integer
+          minimum: 0
+          example: 25
+        delta:
+          type: integer
+          example: -2
+        reason:
+          type: string
+          enum: [inventory_count, opening_balance, damaged, correction, other]
+          example: correction
+        note:
+          type: string
+          example: Manual stock correction after count
+      description: |
+        Use mode=set with newQuantity, or mode=delta with delta.
+        note is required when reason is correction or other.
+
+    ProductAutoFillConflictCandidate:
       type: object
       properties:
-        _id:
-          $ref: "#/components/schemas/MongoId"
-        workspaceId:
-          $ref: "#/components/schemas/MongoId"
-          description: May be omitted by the API clean() util
-        createdByUserId:
-          $ref: "#/components/schemas/MongoId"
-          description: User who created the sale (may be null)
         id:
           type: string
-          description: Product id (business id)
-          example: "P001"
         name:
           type: string
-          example: "Oil"
-        category:
+
+    ProductListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+
+    ProductResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          $ref: '#/components/schemas/Product'
+
+    StockMovement:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
+        workspaceId:
+          $ref: '#/components/schemas/MongoId'
+        productId:
           type: string
-          example: "motor"
-        salePrice:
-          type: number
-          example: 70
-        quantity:
+          example: P001
+        productName:
+          type: string
+        productCategory:
+          type: string
+        type:
+          type: string
+          enum: [purchase, sale, sale_return, adjustment]
+        qtyDelta:
           type: integer
-          example: 2
-        totalPrice:
-          type: number
-          example: 140
+          example: -2
+        beforeQty:
+          type: integer
+          example: 10
+        afterQty:
+          type: integer
+          example: 8
+        refType:
+          type: string
+          example: SaleInvoice
+        refId:
+          type: string
+        refCode:
+          type: string
+          example: INV-001
+        reason:
+          type: string
+          example: correction
+        note:
+          type: string
+        performedByUserId:
+          $ref: '#/components/schemas/MongoId'
+        performedByName:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -249,56 +422,857 @@ components:
           type: string
           format: date-time
 
-    SaleCreateRequest:
+    StockMovementListResponse:
       type: object
-      description: |
-        Allowed fields are ONLY: id, name, quantity, salePrice.
-        You must send `id` or `name`. If `salePrice` is provided, it must match the product's current salePrice.
-      required: [quantity]
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            movements:
+              type: array
+              items:
+                $ref: '#/components/schemas/StockMovement'
+
+    ProductAdjustStockResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            product:
+              $ref: '#/components/schemas/Product'
+            movement:
+              $ref: '#/components/schemas/StockMovement'
+
+    Supplier:
+      type: object
       properties:
         id:
-          type: string
-          description: Product id (preferred to avoid duplicate-name ambiguity)
-          example: "P001"
+          $ref: '#/components/schemas/MongoId'
+        workspaceId:
+          $ref: '#/components/schemas/MongoId'
         name:
           type: string
-          description: Exact product name (case-insensitive). If multiple products share the name, the API returns 409 with candidates.
-          example: "Oil"
+        phone:
+          type: string
+        address:
+          type: string
+        notes:
+          type: string
+        isActive:
+          type: boolean
+        createdByUserId:
+          $ref: '#/components/schemas/MongoId'
+        createdByName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SupplierCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: ABC Supplier
+        phone:
+          type: string
+          example: '01000000000'
+        address:
+          type: string
+          example: Cairo
+        notes:
+          type: string
+        isActive:
+          type: boolean
+          default: true
+
+    SupplierUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        notes:
+          type: string
+        isActive:
+          type: boolean
+
+    SupplierResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          $ref: '#/components/schemas/Supplier'
+
+    SupplierListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            suppliers:
+              type: array
+              items:
+                $ref: '#/components/schemas/Supplier'
+
+    PurchaseInvoiceItem:
+      type: object
+      properties:
+        _id:
+          $ref: '#/components/schemas/MongoId'
+        productId:
+          type: string
+          example: P001
+        productName:
+          type: string
+        productCategory:
+          type: string
+        purchasePrice:
+          type: number
+          example: 50
+        quantity:
+          type: integer
+          example: 5
+
+    PurchaseInvoice:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
+        workspaceId:
+          $ref: '#/components/schemas/MongoId'
+        invoiceCode:
+          type: string
+          example: PUR-001
+        supplierId:
+          $ref: '#/components/schemas/MongoId'
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum: [draft, finalized, cancelled]
+        createdByUserId:
+          $ref: '#/components/schemas/MongoId'
+        createdByName:
+          type: string
+        finalizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finalizedByUserId:
+          $ref: '#/components/schemas/MongoId'
+          nullable: true
+        finalizedByName:
+          type: string
+        notes:
+          type: string
+        subtotal:
+          type: number
+        totalAmount:
+          type: number
+        totalItemsQty:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseInvoiceItem'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PurchaseDraftCreateRequest:
+      type: object
+      required: [invoiceCode]
+      properties:
+        invoiceCode:
+          type: string
+          example: PUR-001
+        supplierId:
+          $ref: '#/components/schemas/MongoId'
+        supplierName:
+          type: string
+          example: ABC Supplier
+        notes:
+          type: string
+
+    PurchaseAddItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        productId:
+          type: string
+          example: P001
+        id:
+          type: string
+          description: Alias of productId.
+        name:
+          type: string
+          example: Engine Oil
+        quantity:
+          type: integer
+          minimum: 1
+          example: 5
+        purchasePrice:
+          type: number
+          minimum: 0
+          example: 50
+        newProduct:
+          type: object
+          properties:
+            id:
+              type: string
+              example: P900
+            name:
+              type: string
+            category:
+              type: string
+            salePrice:
+              type: number
+              minimum: 0
+            minStock:
+              type: integer
+              minimum: 0
+
+    PurchaseUpdateItemRequest:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+        purchasePrice:
+          type: number
+          minimum: 0
+
+    PurchaseInvoiceResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            invoice:
+              $ref: '#/components/schemas/PurchaseInvoice'
+
+    PurchaseInvoiceListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            invoices:
+              type: array
+              items:
+                $ref: '#/components/schemas/PurchaseInvoice'
+
+    SaleInvoiceItem:
+      type: object
+      properties:
+        _id:
+          $ref: '#/components/schemas/MongoId'
+        productId:
+          type: string
+          example: P001
+        productName:
+          type: string
+        productCategory:
+          type: string
+        salePrice:
+          type: number
+          example: 70
+        quantity:
+          type: integer
+          example: 2
+        itemDiscountPercent:
+          type: number
+          example: 0
+        returnedQty:
+          type: integer
+          example: 0
+        unitNetPrice:
+          type: number
+          example: 70
+
+    SaleInvoice:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
+        workspaceId:
+          $ref: '#/components/schemas/MongoId'
+        invoiceCode:
+          type: string
+          example: INV-001
+        name:
+          type: string
+          example: Walk-in Customer
+        status:
+          type: string
+          enum: [draft, finalized, cancelled]
+        createdByUserId:
+          $ref: '#/components/schemas/MongoId'
+        createdByName:
+          type: string
+        finalizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finalizedByUserId:
+          $ref: '#/components/schemas/MongoId'
+          nullable: true
+        finalizedByName:
+          type: string
+        subtotal:
+          type: number
+        totalDiscountAmount:
+          type: number
+        totalAmount:
+          type: number
+        totalItemsQty:
+          type: integer
+        invoiceDiscountPercent:
+          type: number
+        returnStatus:
+          type: string
+          enum: [none, partial, full]
+        totalRefundedAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleInvoiceItem'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SaleInvoiceDraftCreateRequest:
+      type: object
+      required: [invoiceCode]
+      properties:
+        invoiceCode:
+          type: string
+          example: INV-001
+        name:
+          type: string
+          example: Customer Name
+
+    SaleInvoiceAddItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        productId:
+          type: string
+          example: P001
+        id:
+          type: string
+          description: Alias of productId.
+        name:
+          type: string
+          example: Engine Oil
         quantity:
           type: integer
           minimum: 1
           example: 2
-        salePrice:
-          type: number
-          description: Optional; if sent must equal the product salePrice
-          example: 70
 
-    UserCreateRequest:
+    SaleInvoiceUpdateItemQtyRequest:
       type: object
-      required: [name, email, password]
+      required: [quantity]
       properties:
-        name:
-          type: string
-          example: "Ahmed"
-        email:
-          type: string
-          format: email
-          example: "ahmed@mail.com"
-        password:
-          type: string
-          minLength: 6
-          example: "123456"
-        role:
-          type: string
-          enum: [admin, user]
-          default: user
-          example: "user"
+        quantity:
+          type: integer
+          minimum: 1
+          example: 3
 
-    UserPublic:
+    SaleInvoiceDiscountRequest:
+      type: object
+      required: [invoiceDiscountPercent]
+      properties:
+        invoiceDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 10
+
+    SaleInvoiceItemDiscountRequest:
+      type: object
+      required: [itemDiscountPercent]
+      properties:
+        itemDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 5
+
+    SaleInvoiceResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            invoice:
+              $ref: '#/components/schemas/SaleInvoice'
+
+    SaleInvoiceListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            invoices:
+              type: array
+              items:
+                $ref: '#/components/schemas/SaleInvoice'
+
+    SaleReturnItem:
       type: object
       properties:
         _id:
-          $ref: "#/components/schemas/MongoId"
+          $ref: '#/components/schemas/MongoId'
+        productId:
+          type: string
+        productName:
+          type: string
+        productCategory:
+          type: string
+        qtyReturned:
+          type: integer
+        salePrice:
+          type: number
+        itemDiscountPercent:
+          type: number
+        invoiceDiscountPercent:
+          type: number
+        unitNetPrice:
+          type: number
+        unitDiscountAmount:
+          type: number
+        lineRefundAmount:
+          type: number
+        returnStockStatus:
+          type: string
+          enum: [restocked, damaged]
+
+    SaleReturn:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
+        workspaceId:
+          $ref: '#/components/schemas/MongoId'
+        invoiceId:
+          $ref: '#/components/schemas/MongoId'
+        invoiceCode:
+          type: string
+        invoiceName:
+          type: string
+        invoiceCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        invoiceFinalizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        invoiceCashierName:
+          type: string
+        createdByUserId:
+          $ref: '#/components/schemas/MongoId'
+        createdByName:
+          type: string
+        type:
+          type: string
+          enum: [full, partial]
+        totalRefundAmount:
+          type: number
+        totalRefundRestocked:
+          type: number
+        totalRefundDamaged:
+          type: number
+        totalReturnedQty:
+          type: integer
+        stockStatus:
+          type: string
+          enum: [restocked, damaged, mixed]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleReturnItem'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateReturnItemRequest:
+      type: object
+      required: [productId, qtyReturned, returnStockStatus]
+      properties:
+        productId:
+          type: string
+          example: P001
+        qtyReturned:
+          type: integer
+          minimum: 1
+          example: 1
+        returnStockStatus:
+          type: string
+          enum: [restocked, damaged]
+          example: restocked
+
+    CreateReturnRequest:
+      type: object
+      required: [invoiceId]
+      properties:
+        invoiceId:
+          $ref: '#/components/schemas/MongoId'
+        type:
+          type: string
+          enum: [full, partial]
+        defaultStockStatus:
+          type: string
+          enum: [restocked, damaged]
+          description: Used when making full return without items array.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateReturnItemRequest'
+
+    ReturnResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            return:
+              $ref: '#/components/schemas/SaleReturn'
+
+    ReturnListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            returns:
+              type: array
+              items:
+                $ref: '#/components/schemas/SaleReturn'
+
+    ReturnsSummaryResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            summary:
+              type: object
+              properties:
+                count:
+                  type: integer
+                totalRefundAmount:
+                  type: number
+                totalRefundRestocked:
+                  type: number
+                totalRefundDamaged:
+                  type: number
+                totalReturnedQty:
+                  type: integer
+
+    InvoiceReturnsResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            invoice:
+              type: object
+              properties:
+                id:
+                  $ref: '#/components/schemas/MongoId'
+                invoiceCode:
+                  type: string
+                name:
+                  type: string
+                status:
+                  type: string
+                createdAt:
+                  type: string
+                  format: date-time
+                finalizedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                createdByName:
+                  type: string
+                subtotal:
+                  type: number
+                totalDiscountAmount:
+                  type: number
+                totalAmount:
+                  type: number
+                invoiceDiscountPercent:
+                  type: number
+                returnStatus:
+                  type: string
+                totalRefundedAmount:
+                  type: number
+            returns:
+              type: array
+              items:
+                $ref: '#/components/schemas/SaleReturn'
+
+    DashboardMeta:
+      type: object
+      properties:
+        mode:
+          type: string
+          example: last
+        label:
+          type: string
+          example: Last 30 days
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+
+    DashboardSalesTrendPoint:
+      type: object
+      properties:
+        label:
+          type: string
+          example: '2026-04-01'
+        revenue:
+          type: number
+        orders:
+          type: integer
+        refunds:
+          type: number
+        returns:
+          type: integer
+        netRevenue:
+          type: number
+
+    DashboardStockStatusPoint:
+      type: object
+      properties:
+        label:
+          type: string
+          enum: [Out of Stock, Below Min Stock, In Stock]
+        value:
+          type: integer
+
+    DashboardSalesTrendResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            meta:
+              allOf:
+                - $ref: '#/components/schemas/DashboardMeta'
+            series:
+              type: array
+              items:
+                $ref: '#/components/schemas/DashboardSalesTrendPoint'
+
+    DashboardStockStatusResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            meta:
+              allOf:
+                - $ref: '#/components/schemas/DashboardMeta'
+                - type: object
+                  properties:
+                    asOf:
+                      type: string
+                      format: date-time
+            series:
+              type: array
+              items:
+                $ref: '#/components/schemas/DashboardStockStatusPoint'
+            extra:
+              type: object
+              properties:
+                noMinStock:
+                  type: integer
+
+    DashboardOverviewResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            meta:
+              type: object
+              properties:
+                workspaceCreatedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                generatedAt:
+                  type: string
+                  format: date-time
+                mode:
+                  type: string
+                label:
+                  type: string
+                from:
+                  type: string
+                  format: date-time
+                to:
+                  type: string
+                  format: date-time
+            inventory:
+              type: object
+              properties:
+                productsCount:
+                  type: integer
+                categoriesCount:
+                  type: integer
+                totalStockUnits:
+                  type: integer
+                inventoryPurchaseValue:
+                  type: number
+                inventorySaleValue:
+                  type: number
+                inventoryPotentialProfit:
+                  type: number
+                outOfStockCount:
+                  type: integer
+                belowMinStockCount:
+                  type: integer
+                inStockCount:
+                  type: integer
+                noMinStockCount:
+                  type: integer
+            sales:
+              type: object
+              properties:
+                salesInvoicesCount:
+                  type: integer
+                salesRevenue:
+                  type: number
+                netRevenue:
+                  type: number
+            purchases:
+              type: object
+              properties:
+                purchaseInvoicesCount:
+                  type: integer
+                purchaseSpend:
+                  type: number
+            returns:
+              type: object
+              properties:
+                returnsCount:
+                  type: integer
+                refundTotal:
+                  type: number
+                refundRestockedTotal:
+                  type: number
+                refundDamagedTotal:
+                  type: number
+                returnedQtyTotal:
+                  type: integer
+            profit:
+              type: object
+              properties:
+                inventoryPotentialProfit:
+                  type: number
+                cogsEstimated:
+                  type: number
+                realizedProfitEstimated:
+                  type: number
+            users:
+              type: object
+              properties:
+                usersTotal:
+                  type: integer
+                adminsCount:
+                  type: integer
+                workersCount:
+                  type: integer
+                activeUsersCount:
+                  type: integer
+                disabledUsersCount:
+                  type: integer
+
+    User:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MongoId'
         name:
           type: string
         email:
@@ -311,494 +1285,334 @@ components:
           type: string
           enum: [active, disabled]
         workspaceId:
-          $ref: "#/components/schemas/MongoId"
+          $ref: '#/components/schemas/MongoId'
+        maxItemDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        maxInvoiceDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
         createdAt:
           type: string
           format: date-time
 
-    DashboardSalesTrendPoint:
+    UserCreateRequest:
       type: object
+      required: [name, email, password]
       properties:
-        label:
+        name:
           type: string
-          description: "YYYY-MM-DD"
-          example: "2026-02-17"
-        revenue:
-          type: number
-          example: 560
-        orders:
-          type: integer
-          example: 8
+          example: Ahmed
+        email:
+          type: string
+          format: email
+          example: ahmed@mail.com
+        password:
+          type: string
+          minLength: 6
+          example: '123456'
+        role:
+          type: string
+          enum: [admin, user]
+          default: user
 
-    DashboardStockStatusPoint:
+    UpdateUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+
+    UpdateUserDiscountLimitsRequest:
       type: object
       properties:
-        label:
+        maxItemDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 10
+        maxInvoiceDiscountPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 15
+
+    UserResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            message:
+              type: string
+
+    UserListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            ownerUserId:
+              $ref: '#/components/schemas/MongoId'
+            count:
+              type: integer
+            users:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+
+    WorkspaceUpdateNameRequest:
+      type: object
+      properties:
+        name:
           type: string
-          example: "In Stock"
-        value:
-          type: integer
-          example: 12
+          example: New Workspace Name
+        workspaceName:
+          type: string
+          example: New Workspace Name
+
+    WorkspaceResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusSuccess'
+        data:
+          type: object
+          properties:
+            workspace:
+              $ref: '#/components/schemas/WorkspacePublic'
+
+security:
+  - bearerAuth: []
 
 paths:
   /api/auth/register:
     post:
       tags: [Auth]
-      summary: Register (Create workspace + admin)
+      summary: Register workspace owner admin
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AuthRegisterRequest"
+              $ref: '#/components/schemas/AuthRegisterRequest'
       responses:
-        "201":
-          description: Workspace + admin created successfully
+        '201':
+          description: Registered successfully
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      token:
-                        type: string
-                      user:
-                        $ref: "#/components/schemas/AuthUser"
-                      workspace:
-                        $ref: "#/components/schemas/WorkspacePublic"
-              examples:
-                ok:
-                  value:
-                    status: success
-                    data:
-                      token: "JWT..."
-                      user:
-                        id: "65c8d2f8a1b2c3d4e5f67890"
-                        name: "Admin"
-                        email: "admin@mail.com"
-                        role: "admin"
-                        workspaceId: "65c8d2f8a1b2c3d4e5f67891"
-                      workspace:
-                        id: "65c8d2f8a1b2c3d4e5f67891"
-                        name: "My Store"
-                        ownerUserId: "65c8d2f8a1b2c3d4e5f67890"
-        "400":
+                $ref: '#/components/schemas/RegisterSuccessResponse'
+        '400':
           description: Validation error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-              examples:
-                missingFields:
-                  value:
-                    status: error
-                    message: "workspaceName, name, email, password are required"
-        "409":
+                $ref: '#/components/schemas/JSendError'
+        '409':
           description: Email already exists
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-              examples:
-                exists:
-                  value:
-                    status: error
-                    message: "Email already exists"
+                $ref: '#/components/schemas/JSendError'
 
   /api/auth/login:
     post:
       tags: [Auth]
       summary: Login
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AuthLoginRequest"
+              $ref: '#/components/schemas/AuthLoginRequest'
       responses:
-        "200":
+        '200':
           description: Logged in successfully
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      token:
-                        type: string
-                      user:
-                        $ref: "#/components/schemas/AuthUser"
-        "400":
-          description: Missing email/password
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Missing email or password
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-        "401":
+                $ref: '#/components/schemas/JSendError'
+        '401':
           description: Invalid credentials
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-        "403":
+                $ref: '#/components/schemas/JSendError'
+        '403':
           description: User disabled
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
+                $ref: '#/components/schemas/JSendError'
 
   /api/auth/logout:
     post:
       tags: [Auth]
-      summary: Logout (invalidate existing tokens)
-      security:
-        - bearerAuth: []
+      summary: Logout current session family by incrementing tokenVersion
       responses:
-        "200":
+        '200':
           description: Logged out successfully
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-                        example: "Logged out successfully"
-        "401":
-          description: Unauthorized (missing/invalid token)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendError"
-
-  /api/products:
-    get:
-      tags: [Products]
-      summary: Get all products (current workspace)
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Products list
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ProductPublic"
-        "401":
+                $ref: '#/components/schemas/EmptySuccess'
+        '401':
           description: Unauthorized
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
+                $ref: '#/components/schemas/JSendError'
 
+  /api/products:
+    get:
+      tags: [Products]
+      summary: List products in current workspace
+      responses:
+        '200':
+          description: Products list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
     post:
       tags: [Products]
-      summary: Create product (current workspace)
-      security:
-        - bearerAuth: []
+      summary: Create product
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProductCreateRequest"
+              $ref: '#/components/schemas/ProductCreateRequest'
       responses:
-        "201":
+        '201':
           description: Product created
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    $ref: "#/components/schemas/ProductPublic"
-        "400":
-          description: Validation error
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          description: Validation or allowlist error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "409":
+                $ref: '#/components/schemas/JSendFail'
+        '409':
           description: Product id already exists
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/JSendFail'
 
   /api/products/low-stock:
     get:
       tags: [Products]
-      summary: Get low stock products
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: threshold
-          schema:
-            type: integer
-            minimum: 1
-            default: 3
-          description: Return products with quantity < threshold
+      summary: List low stock products using per-product minStock
       responses:
-        "200":
+        '200':
           description: Low stock products
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ProductPublic"
-
-  /api/products/{id}:
-    put:
-      tags: [Products]
-      summary: Update product by business id
-      description: Path parameter `{id}` refers to Product.id (business id), not Mongo `_id`.
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          example: "P001"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ProductUpdateRequest"
-      responses:
-        "200":
-          description: Product updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    $ref: "#/components/schemas/ProductPublic"
-        "400":
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
-          description: Product not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-        "409":
-          description: New product id already exists
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-
-    delete:
-      tags: [Products]
-      summary: Delete product by business id
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-          example: "P001"
-      responses:
-        "200":
-          description: Product deleted
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-                        example: "Product deleted successfully"
-        "404":
-          description: Product not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/ProductListResponse'
 
   /api/products/search:
     get:
       tags: [Products]
       summary: Search products
-      security:
-        - bearerAuth: []
       parameters:
         - in: query
           name: id
-          schema: { type: string }
-          description: Partial match (case-insensitive)
+          schema:
+            type: string
+          description: Case-insensitive partial match.
         - in: query
           name: name
-          schema: { type: string }
-          description: Partial match (case-insensitive)
+          schema:
+            type: string
         - in: query
           name: category
-          schema: { type: string }
-          description: Partial match (case-insensitive)
+          schema:
+            type: string
       responses:
-        "200":
-          description: Search results
+        '200':
+          description: Search result
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ProductPublic"
+                $ref: '#/components/schemas/ProductListResponse'
 
   /api/products/auto-complete:
     get:
       tags: [Products]
-      summary: Auto-complete products (by id or name)
-      security:
-        - bearerAuth: []
+      summary: Auto-complete products by id or name
       parameters:
         - in: query
           name: query
-          schema: { type: string }
-          description: If missing, API returns an empty array
+          schema:
+            type: string
       responses:
-        "200":
-          description: Suggestions (max 10)
+        '200':
+          description: Suggestions
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ProductPublic"
+                $ref: '#/components/schemas/ProductListResponse'
 
   /api/products/auto-fill:
     get:
       tags: [Products]
-      summary: Auto-fill product by id or exact name
-      security:
-        - bearerAuth: []
+      summary: Auto-fill product by business id or exact name
       parameters:
         - in: query
           name: id
-          schema: { type: string }
-          description: Business product id
+          schema:
+            type: string
         - in: query
           name: name
-          schema: { type: string }
-          description: Exact name (case-insensitive). If duplicates exist, returns 409 with candidates.
+          schema:
+            type: string
       responses:
-        "200":
+        '200':
           description: Product found
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    $ref: "#/components/schemas/ProductPublic"
-        "400":
-          description: Missing id/name
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          description: id or name missing
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
+                $ref: '#/components/schemas/JSendFail'
+        '404':
           description: Product not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "409":
-          description: Multiple products share the same name
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-
-  /api/sales:
-    get:
-      tags: [Sales]
-      summary: Get sales history (current workspace)
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Sales list
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Multiple products have same name
           content:
             application/json:
               schema:
@@ -806,153 +1620,351 @@ paths:
                 required: [status, data]
                 properties:
                   status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SalePublic"
-
-    post:
-      tags: [Sales]
-      summary: Create a sale (and decrement product stock)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaleCreateRequest"
-      responses:
-        "201":
-          description: Sale created and stock updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    $ref: "#/components/schemas/SalePublic"
-        "400":
-          description: Validation/business rules error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
-          description: Product not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-        "409":
-          description: Multiple products share the same name (choose by id)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendFail"
-
-  /api/sales/today:
-    get:
-      tags: [Sales]
-      summary: Get today's sales (current workspace)
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Today's sales
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SalePublic"
-
-  /api/sales/{saleId}:
-    delete:
-      tags: [Sales]
-      summary: Delete a sale (and revert stock)
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: saleId
-          required: true
-          schema:
-            $ref: "#/components/schemas/MongoId"
-      responses:
-        "200":
-          description: Sale deleted and stock restored
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
+                    $ref: '#/components/schemas/StatusFail'
                   data:
                     type: object
                     properties:
                       message:
                         type: string
-                        example: "Sale deleted and stock updated"
-                      updatedProduct:
-                        $ref: "#/components/schemas/ProductPublic"
-        "404":
-          description: Sale or product not found
+                      candidates:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProductAutoFillConflictCandidate'
+
+  /api/products/{id}:
+    put:
+      tags: [Products]
+      summary: Update product by business id
+      parameters:
+        - $ref: '#/components/parameters/ProductBusinessIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      responses:
+        '200':
+          description: Product updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          description: Validation or allowlist error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: New product id already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    delete:
+      tags: [Products]
+      summary: Delete product by business id
+      parameters:
+        - $ref: '#/components/parameters/ProductBusinessIdParam'
+      responses:
+        '200':
+          description: Product deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
 
-  /api/sales/search:
+  /api/products/{id}/adjust-stock:
+    patch:
+      tags: [Products]
+      summary: Adjust product stock manually
+      parameters:
+        - $ref: '#/components/parameters/ProductBusinessIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductAdjustStockRequest'
+      responses:
+        '200':
+          description: Stock adjusted and movement logged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductAdjustStockResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Stock changed, retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/products/{id}/movements:
     get:
-      tags: [Sales]
-      summary: Search sales
-      security:
-        - bearerAuth: []
+      tags: [Stock Movements]
+      summary: List stock movements for a product
+      parameters:
+        - $ref: '#/components/parameters/ProductBusinessIdParam'
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [purchase, sale, sale_return, adjustment]
+        - in: query
+          name: refType
+          schema:
+            type: string
+        - in: query
+          name: refCode
+          schema:
+            type: string
+        - in: query
+          name: performedByName
+          schema:
+            type: string
+        - in: query
+          name: performedByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: reason
+          schema:
+            type: string
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: [in, out]
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Product movement history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementListResponse'
+        '400':
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/stock-movements:
+    get:
+      tags: [Stock Movements]
+      summary: List stock movements in workspace
       parameters:
         - in: query
-          name: id
-          schema: { type: string }
-          description: Product id partial match
+          name: type
+          schema:
+            type: string
+            enum: [purchase, sale, sale_return, adjustment]
+        - in: query
+          name: productId
+          schema:
+            type: string
+        - in: query
+          name: refType
+          schema:
+            type: string
+        - in: query
+          name: refCode
+          schema:
+            type: string
+        - in: query
+          name: performedByName
+          schema:
+            type: string
+        - in: query
+          name: performedByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: reason
+          schema:
+            type: string
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: [in, out]
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Movements list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementListResponse'
+        '400':
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/suppliers:
+    get:
+      tags: [Suppliers]
+      summary: List suppliers
+      parameters:
         - in: query
           name: name
-          schema: { type: string }
-          description: Product name partial match
+          schema:
+            type: string
         - in: query
-          name: category
-          schema: { type: string }
-          description: Category partial match
+          name: phone
+          schema:
+            type: string
         - in: query
-          name: date
-          schema: { type: string, example: "2026-02-17" }
-          description: Filter by a single day (YYYY-MM-DD)
+          name: address
+          schema:
+            type: string
         - in: query
-          name: startDate
-          schema: { type: string, example: "2026-02-01" }
-          description: Range start day (YYYY-MM-DD). Must be used with endDate.
+          name: search
+          schema:
+            type: string
         - in: query
-          name: endDate
-          schema: { type: string, example: "2026-02-17" }
-          description: Range end day (YYYY-MM-DD). Must be used with startDate.
+          name: isActive
+          schema:
+            type: boolean
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
       responses:
-        "200":
-          description: Search results
+        '200':
+          description: Suppliers list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierListResponse'
+    post:
+      tags: [Suppliers]
+      summary: Create supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierCreateRequest'
+      responses:
+        '201':
+          description: Supplier created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          description: Validation or allowlist error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User name not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Supplier already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/suppliers/auto-complete:
+    get:
+      tags: [Suppliers]
+      summary: Auto-complete suppliers by name
+      parameters:
+        - in: query
+          name: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Suggestions
           content:
             application/json:
               schema:
@@ -960,378 +1972,1364 @@ paths:
                 required: [status, data]
                 properties:
                   status:
-                    type: string
-                    enum: [success]
+                    $ref: '#/components/schemas/StatusSuccess'
                   data:
                     type: array
                     items:
-                      $ref: "#/components/schemas/SalePublic"
+                      $ref: '#/components/schemas/Supplier'
 
-  /api/dashboard/charts/sales-trend:
+  /api/suppliers/{id}:
     get:
-      tags: [Dashboard]
-      summary: Sales trend chart (Admin only)
-      description: |
-        Returns revenue + orders per day for the last N days.
-        Note: current implementation aggregates across all workspaces (no workspace filter).
-      security:
-        - bearerAuth: []
+      tags: [Suppliers]
+      summary: Get supplier by id
       parameters:
+        - $ref: '#/components/parameters/SupplierIdParam'
+      responses:
+        '200':
+          description: Supplier details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          description: Invalid supplier id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Supplier not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    patch:
+      tags: [Suppliers]
+      summary: Update supplier
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierUpdateRequest'
+      responses:
+        '200':
+          description: Supplier updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          description: Validation or allowlist error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Supplier not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Supplier name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    delete:
+      tags: [Suppliers]
+      summary: Archive supplier
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdParam'
+      responses:
+        '200':
+          description: Supplier archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          description: Invalid supplier id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Supplier not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/suppliers/{id}/restore:
+    patch:
+      tags: [Suppliers]
+      summary: Restore archived supplier
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdParam'
+      responses:
+        '200':
+          description: Supplier restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '404':
+          description: Supplier not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/purchases:
+    get:
+      tags: [Purchase Invoices]
+      summary: List purchase invoices
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, finalized, cancelled]
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: invoiceCode
+          schema:
+            type: string
+        - in: query
+          name: supplierName
+          schema:
+            type: string
+        - in: query
+          name: supplierId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: createdByName
+          schema:
+            type: string
+        - in: query
+          name: createdByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: minTotalAmount
+          schema:
+            type: number
+        - in: query
+          name: maxTotalAmount
+          schema:
+            type: number
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
         - in: query
           name: days
           schema:
             type: integer
             minimum: 1
-            default: 30
-      responses:
-        "200":
-          description: Trend series
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      series:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/DashboardSalesTrendPoint"
-                      from:
-                        type: string
-                        format: date-time
-                      to:
-                        type: string
-                        format: date-time
-        "403":
-          description: Forbidden (not admin)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendError"
-
-  /api/dashboard/charts/stock-status:
-    get:
-      tags: [Dashboard]
-      summary: Stock status chart (Admin only)
-      description: |
-        Returns counts of Out of Stock / Low Stock / In Stock products.
-        Note: current implementation aggregates across all workspaces (no workspace filter).
-      security:
-        - bearerAuth: []
-      parameters:
         - in: query
-          name: lowThreshold
+          name: page
           schema:
             type: integer
-            minimum: 1
-            default: 3
-      responses:
-        "200":
-          description: Stock status series
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      series:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/DashboardStockStatusPoint"
-                      threshold:
-                        type: integer
-        "403":
-          description: Forbidden (not admin)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendError"
-
-  /api/dashboard/overview:
-    get:
-      tags: [Dashboard]
-      summary: Dashboard overview (Admin only)
-      description: |
-        Inventory + today's sales summary.
-        Note: current implementation aggregates across all workspaces (no workspace filter).
-      security:
-        - bearerAuth: []
-      parameters:
+            default: 1
         - in: query
-          name: lowThreshold
+          name: limit
           schema:
             type: integer
-            minimum: 1
-            default: 3
+            default: 50
       responses:
-        "200":
-          description: Overview metrics
+        '200':
+          description: Purchase invoices list
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      productsCount: { type: integer }
-                      totalStockUnits: { type: integer }
-                      inventoryPurchaseValue: { type: number }
-                      inventorySaleValue: { type: number }
-                      potentialProfit: { type: number }
-                      lowStockCount: { type: integer }
-                      outOfStockCount: { type: integer }
-                      todaySalesCount: { type: integer }
-                      todayRevenue: { type: number }
-                      threshold: { type: integer }
-        "403":
-          description: Forbidden (not admin)
+                $ref: '#/components/schemas/PurchaseInvoiceListResponse'
+        '400':
+          description: Invalid filters
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-
-  /api/users:
-    get:
-      tags: [Users]
-      summary: Get users in the current workspace (Admin only)
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Users list
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      ownerUserId:
-                        $ref: "#/components/schemas/MongoId"
-                      count:
-                        type: integer
-                      users:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/UserPublic"
-        "403":
-          description: Forbidden (not admin)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JSendError"
-
+                $ref: '#/components/schemas/JSendFail'
     post:
-      tags: [Users]
-      summary: Create user in current workspace (Admin only)
-      security:
-        - bearerAuth: []
+      tags: [Purchase Invoices]
+      summary: Create purchase invoice draft
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UserCreateRequest"
+              $ref: '#/components/schemas/PurchaseDraftCreateRequest'
       responses:
-        "201":
-          description: User created
+        '201':
+          description: Draft created
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      user:
-                        $ref: "#/components/schemas/UserPublic"
-        "400":
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
+          description: Validation or allowlist error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Invoice code already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/purchases/{id}:
+    get:
+      tags: [Purchase Invoices]
+      summary: Get purchase invoice by id
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: Purchase invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
+          description: Invalid invoice id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/purchases/{id}/items:
+    post:
+      tags: [Purchase Invoices]
+      summary: Add item to draft purchase invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseAddItemRequest'
+      responses:
+        '200':
+          description: Item added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
           description: Validation error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
-          description: Workspace not found
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "409":
-          description: Email already exists
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or product not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Multiple matching products by name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
 
-  /api/users/{id}/status:
+  /api/purchases/{id}/items/{itemId}:
     patch:
-      tags: [Users]
-      summary: Update user status (enable/disable) (Admin only)
-      description: |
-        Updates the user status to "active" or "disabled".
-        Rules:
-        - You cannot change your own status.
-        - You cannot change the workspace owner status.
-        - You cannot disable the last active admin in the workspace.
-      security:
-        - bearerAuth: []
+      tags: [Purchase Invoices]
+      summary: Update purchase invoice item on draft
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            $ref: "#/components/schemas/MongoId"
+        - $ref: '#/components/parameters/InvoiceIdParam'
+        - $ref: '#/components/parameters/ItemIdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [status]
-              properties:
-                status:
-                  type: string
-                  enum: [active, disabled]
-            examples:
-              disable:
-                value:
-                  status: disabled
-              enable:
-                value:
-                  status: active
+              $ref: '#/components/schemas/PurchaseUpdateItemRequest'
       responses:
-        "200":
-          description: User status updated (or already in the same status)
+        '200':
+          description: Item updated
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-        "400":
-          description: Business rule / validation error
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
+          description: Validation error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "403":
-          description: User is not in your workspace / not admin
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
-          description: User/workspace not found
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or item not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/JSendFail'
+    delete:
+      tags: [Purchase Invoices]
+      summary: Remove item from draft purchase invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+        - $ref: '#/components/parameters/ItemIdParam'
+      responses:
+        '200':
+          description: Item removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
+          description: Invalid ids
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/purchases/{id}/finalize:
+    post:
+      tags: [Purchase Invoices]
+      summary: Finalize purchase invoice and increase stock
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: Purchase invoice finalized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseInvoiceResponse'
+        '400':
+          description: Invalid id or empty invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Only draft invoices can be finalized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or related product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices:
+    get:
+      tags: [Sale Invoices]
+      summary: List sale invoices
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, finalized, cancelled]
+        - in: query
+          name: returnStatus
+          schema:
+            type: string
+            enum: [none, partial, full]
+        - in: query
+          name: excludeFullyReturned
+          schema:
+            type: boolean
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: invoiceCode
+          schema:
+            type: string
+        - in: query
+          name: createdByName
+          schema:
+            type: string
+        - in: query
+          name: createdByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: minTotalAmount
+          schema:
+            type: number
+        - in: query
+          name: maxTotalAmount
+          schema:
+            type: number
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: productId
+          schema:
+            type: string
+        - in: query
+          name: productName
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Sale invoices list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceListResponse'
+        '400':
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    post:
+      tags: [Sale Invoices]
+      summary: Create sale invoice draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInvoiceDraftCreateRequest'
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Invoice code already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}:
+    get:
+      tags: [Sale Invoices]
+      summary: Get sale invoice by id
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: Sale invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Invalid invoice id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/returns:
+    get:
+      tags: [Sale Invoices]
+      summary: Get all return operations for one invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: Invoice returns list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReturnsResponse'
+        '400':
+          description: Invalid invoice id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/items:
+    post:
+      tags: [Sale Invoices]
+      summary: Add item to draft sale invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInvoiceAddItemRequest'
+      responses:
+        '200':
+          description: Item added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Multiple matching products by name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/items/{itemId}:
+    patch:
+      tags: [Sale Invoices]
+      summary: Update item quantity on draft sale invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+        - $ref: '#/components/parameters/ItemIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInvoiceUpdateItemQtyRequest'
+      responses:
+        '200':
+          description: Item quantity updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Invalid id or quantity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    delete:
+      tags: [Sale Invoices]
+      summary: Remove item from draft sale invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+        - $ref: '#/components/parameters/ItemIdParam'
+      responses:
+        '200':
+          description: Item removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Invalid ids
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/discount:
+    patch:
+      tags: [Sale Invoices]
+      summary: Apply invoice-level discount on draft sale invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInvoiceDiscountRequest'
+      responses:
+        '200':
+          description: Discount applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft or user exceeded allowed discount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/items/{itemId}/discount:
+    patch:
+      tags: [Sale Invoices]
+      summary: Apply item-level discount on draft sale invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+        - $ref: '#/components/parameters/ItemIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInvoiceItemDiscountRequest'
+      responses:
+        '200':
+          description: Discount applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Invoice is not draft or user exceeded allowed discount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice, item, or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/finalize:
+    post:
+      tags: [Sale Invoices]
+      summary: Finalize sale invoice and decrement stock
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: Invoice finalized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleInvoiceResponse'
+        '400':
+          description: Invalid id, empty invoice, or insufficient stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Only draft invoices can be finalized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice or product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Stock changed during finalize
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/invoices/{id}/receipt.pdf:
+    get:
+      tags: [Sale Invoices]
+      summary: Generate receipt PDF for finalized invoice
+      parameters:
+        - $ref: '#/components/parameters/InvoiceIdParam'
+      responses:
+        '200':
+          description: PDF binary response
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid invoice id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Only finalized invoices can be printed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '500':
+          description: Puppeteer missing or server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+
+  /api/returns:
+    get:
+      tags: [Returns]
+      summary: List returns
+      parameters:
+        - in: query
+          name: stockStatus
+          schema:
+            type: string
+            enum: [restocked, damaged, mixed]
+        - in: query
+          name: itemStatus
+          schema:
+            type: string
+            enum: [restocked, damaged]
+        - in: query
+          name: invoiceId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: invoiceCode
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: productId
+          schema:
+            type: string
+        - in: query
+          name: productName
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: createdByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: createdByName
+          schema:
+            type: string
+        - in: query
+          name: cashierName
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Returns list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnListResponse'
+        '400':
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    post:
+      tags: [Returns]
+      summary: Create return for sale invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReturnRequest'
+      responses:
+        '201':
+          description: Return created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnResponse'
+        '400':
+          description: Validation error or returned quantity exceeds available quantity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Returns allowed only for finalized invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Invoice, product, or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/returns/summary:
+    get:
+      tags: [Returns]
+      summary: Get returns summary
+      parameters:
+        - in: query
+          name: stockStatus
+          schema:
+            type: string
+            enum: [restocked, damaged, mixed]
+        - in: query
+          name: itemStatus
+          schema:
+            type: string
+            enum: [restocked, damaged]
+        - in: query
+          name: invoiceId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: invoiceCode
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: productId
+          schema:
+            type: string
+        - in: query
+          name: productName
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: createdByUserId
+          schema:
+            $ref: '#/components/schemas/MongoId'
+        - in: query
+          name: createdByName
+          schema:
+            type: string
+        - in: query
+          name: cashierName
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Returns summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnsSummaryResponse'
+        '400':
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/returns/{id}:
+    get:
+      tags: [Returns]
+      summary: Get return by id
+      parameters:
+        - $ref: '#/components/parameters/MongoObjectIdParam'
+      responses:
+        '200':
+          description: Return details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnResponse'
+        '400':
+          description: Invalid return id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Return not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/dashboard/charts/sales-trend:
+    get:
+      tags: [Dashboard]
+      summary: Sales trend chart
+      description: Admin only. Filter modes are mutually exclusive.
+      parameters:
+        - in: query
+          name: preset
+          schema:
+            type: string
+            enum: [today, last, since_creation]
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+          description: Used with preset=last.
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Sales trend
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSalesTrendResponse'
+        '400':
+          description: Invalid filter mode or values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+
+  /api/dashboard/charts/stock-status:
+    get:
+      tags: [Dashboard]
+      summary: Stock status chart as of selected date range end
+      description: Admin only. Filter modes are mutually exclusive.
+      parameters:
+        - in: query
+          name: preset
+          schema:
+            type: string
+            enum: [today, last, since_creation]
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Stock status series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStockStatusResponse'
+        '400':
+          description: Invalid filter mode or values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+
+  /api/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard overview
+      description: Admin only. Filter modes are mutually exclusive.
+      parameters:
+        - in: query
+          name: preset
+          schema:
+            type: string
+            enum: [today, last, since_creation]
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardOverviewResponse'
+        '400':
+          description: Invalid filter mode or values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+
+  /api/users:
+    get:
+      tags: [Users]
+      summary: List users in current workspace
+      description: Admin only.
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '403':
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+        '404':
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+    post:
+      tags: [Users]
+      summary: Create user in current workspace
+      description: Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
 
   /api/users/{id}:
     delete:
       tags: [Users]
-      summary: Delete a user permanently (Admin only)
-      description: |
-        Permanently deletes the user document from the database.
-        Rules:
-        - You cannot delete your own account.
-        - You cannot delete the workspace owner.
-        - You cannot delete the last active admin in the workspace.
-      security:
-        - bearerAuth: []
+      summary: Delete user permanently
+      description: Admin only.
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            $ref: "#/components/schemas/MongoId"
+        - $ref: '#/components/parameters/UserIdParam'
       responses:
-        "200":
+        '200':
           description: User deleted permanently
           content:
             application/json:
               schema:
-                type: object
-                required: [status, data]
-                properties:
-                  status:
-                    type: string
-                    enum: [success]
-                  data:
-                    type: object
-                    properties:
-                      message:
-                        type: string
-        "400":
+                $ref: '#/components/schemas/EmptySuccess'
+        '400':
           description: Business rule error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "403":
-          description: User is not in your workspace / not admin
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: Admin only or user not in workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
-        "404":
-          description: User/workspace not found
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User or workspace not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendFail"
+                $ref: '#/components/schemas/JSendFail'
 
-  /api/workspaces/deleteworkspace:
-    delete:
-      tags: [Workspaces]
-      summary: Delete my workspace permanently (Admin + Owner only)
-      description: |
-        Permanently deletes:
-        1) Sales
-        2) Products
-        3) Users
-        4) Workspace
-        Only the workspace owner (ownerUserId) can delete the workspace.
-      security:
-        - bearerAuth: []
+  /api/users/{id}/status:
+    patch:
+      tags: [Users]
+      summary: Update user status
+      description: Admin only.
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
       responses:
-        "200":
-          description: Workspace deleted
+        '200':
+          description: User status updated
           content:
             application/json:
               schema:
@@ -1339,23 +3337,122 @@ paths:
                 required: [status, data]
                 properties:
                   status:
-                    type: string
-                    enum: [success]
+                    $ref: '#/components/schemas/StatusSuccess'
                   data:
                     type: object
                     properties:
                       message:
                         type: string
-                        example: "Workspace deleted permanently"
-        "403":
+        '400':
+          description: Validation or business rule error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: User not in workspace or not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User or workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/users/{id}/discount-limits:
+    patch:
+      tags: [Users]
+      summary: Update user discount limits
+      description: Admin only.
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserDiscountLimitsRequest'
+      responses:
+        '200':
+          description: Discount limits updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '403':
+          description: User not in workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: User or workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+
+  /api/workspaces/name:
+    patch:
+      tags: [Workspaces]
+      summary: Update workspace name
+      description: Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceUpdateNameRequest'
+      responses:
+        '200':
+          description: Workspace name updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '400':
+          description: Validation or allowlist error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendFail'
+        '404':
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JSendError'
+
+  /api/workspaces/deleteworkspace:
+    delete:
+      tags: [Workspaces]
+      summary: Delete current workspace permanently
+      description: Admin + workspace owner only.
+      responses:
+        '200':
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '403':
           description: Only workspace owner can delete it
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
-        "404":
-          description: Workspace not found for this user
+                $ref: '#/components/schemas/JSendError'
+        '404':
+          description: Workspace not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JSendError"
+                $ref: '#/components/schemas/JSendError'

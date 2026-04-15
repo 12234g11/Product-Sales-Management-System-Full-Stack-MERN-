@@ -1,7 +1,9 @@
 :root {
   font-family: "Cairo", sans-serif;
 }
-
+/* :root {
+  font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif;
+} */
 html,
 body,
 #root,
