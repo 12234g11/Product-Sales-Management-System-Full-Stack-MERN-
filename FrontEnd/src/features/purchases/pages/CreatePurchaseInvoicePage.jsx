@@ -144,7 +144,7 @@ export default function CreatePurchaseInvoicePage() {
                   </div>
                 ) : (
                   <div className="form-text">
-                    لو الاسم غير موجود، الباك هيعمل resolve/create تلقائيًا.
+                   لو الاسم غير موجود هيتم إنشاء المورد تلقائيا.
                   </div>
                 )}
               </div>

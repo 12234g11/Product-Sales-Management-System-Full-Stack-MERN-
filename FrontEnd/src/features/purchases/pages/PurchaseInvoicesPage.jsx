@@ -224,7 +224,6 @@ export default function PurchaseInvoicesPage() {
                 <option value="">الكل</option>
                 <option value="draft">مسودة</option>
                 <option value="finalized">معتمدة</option>
-                <option value="cancelled">ملغية</option>
               </select>
             </div>
 
@@ -257,7 +256,7 @@ export default function PurchaseInvoicesPage() {
             </div>
 
             <div className="col-12 col-md-3">
-              <label className="form-label">معرّف المورد</label>
+              <label className="form-label">كود المورد</label>
               <input
                 className="form-control"
                 value={filters.supplierId}
