@@ -3,6 +3,7 @@ import { useLocation, useSearchParams } from "react-router-dom";
 import { productsApi } from "../api/productsApi";
 import AdjustStockModal from "../components/AdjustStockModal";
 import ProductMovementsModal from "../components/ProductMovementsModal";
+import { translateApiError } from "../../../services/http/errorMap";
 
 function toNumber(v) {
   const n = Number(v);
@@ -360,17 +361,24 @@ export default function ProductsPage() {
 
     try {
       const res = await productsApi.list(nextFilters);
+      const products = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.products)
+          ? res.products
+          : Array.isArray(res?.items)
+            ? res.items
+            : [];
 
-      setItems(Array.isArray(res?.products) ? res.products : []);
+      setItems(products);
       setPaginationState(
         res?.pagination || {
-          total: 0,
+          total: products.length,
           page: Number(nextFilters.page || 1),
           limit: Number(nextFilters.limit || 20),
         }
       );
     } catch (e) {
-      setError(e.userMessage || "فشل تحميل المنتجات");
+      setError(translateApiError(e, "فشل تحميل المنتجات"));
       setItems([]);
       setPaginationState({
         total: 0,
@@ -513,7 +521,7 @@ export default function ProductsPage() {
       setShowForm(false);
       await loadProducts(filters);
     } catch (e) {
-      setError(e.userMessage || (mode === "create" ? "فشل إضافة المنتج" : "فشل تعديل المنتج"));
+      setError(translateApiError(e, mode === "create" ? "فشل إضافة المنتج" : "فشل تعديل المنتج"));
       throw e;
     } finally {
       setBusy(false);
@@ -535,7 +543,7 @@ export default function ProductsPage() {
       setDeleting(null);
       await loadProducts(filters);
     } catch (e) {
-      setError(e.userMessage || "فشل حذف المنتج");
+      setError(translateApiError(e, "فشل حذف المنتج"));
     } finally {
       setBusy(false);
     }
@@ -556,7 +564,7 @@ export default function ProductsPage() {
       setAdjusting(null);
       await loadProducts(filters);
     } catch (e) {
-      setError(e.userMessage || "فشل تسوية المخزون");
+      setError(translateApiError(e, "فشل تسوية المخزون"));
       throw e;
     } finally {
       setBusy(false);

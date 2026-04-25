@@ -16,133 +16,25 @@ const cleanMovement = (m) => {
   return obj;
 };
 
-const parsePagination = (req, defaultLimit = 50, maxLimit = 200) => {
-  const pageRaw = parseInt(req.query.page || "1", 10);
-  const limitRaw = parseInt(req.query.limit || String(defaultLimit), 10);
-
-  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-  const limit =
-    Number.isFinite(limitRaw) && limitRaw > 0
-      ? Math.min(limitRaw, maxLimit)
-      : defaultLimit;
-
-  return { page, limit };
-};
-
-const buildProductsFilters = (req, { lowStockOnly = false } = {}) => {
-  const workspaceId = req.user.workspaceId;
-
-  const search = norm(req.query.search);
-  const id = norm(req.query.id);
-  const name = norm(req.query.name);
-  const category = norm(req.query.category);
-
-  const filters = { workspaceId };
-  const andParts = [];
-
-  if (id) {
-    filters.id = { $regex: new RegExp(escapeRegex(id), "i") };
-  }
-
-  if (name) {
-    filters.name = { $regex: new RegExp(escapeRegex(name), "i") };
-  }
-
-  if (category) {
-    filters.category = { $regex: new RegExp(escapeRegex(category), "i") };
-  }
-
-  if (search) {
-    const r = new RegExp(escapeRegex(search), "i");
-    andParts.push({
-      $or: [
-        { id: { $regex: r } },
-        { name: { $regex: r } },
-        { category: { $regex: r } },
-      ],
-    });
-  }
-
-  if (lowStockOnly) {
-    andParts.push({
-      $or: [
-        { quantity: 0 },
-        {
-          $expr: {
-            $and: [
-              { $gt: [{ $ifNull: ["$quantity", 0] }, 0] },
-              { $gt: [{ $ifNull: ["$minStock", 0] }, 0] },
-              {
-                $lt: [
-                  { $ifNull: ["$quantity", 0] },
-                  { $ifNull: ["$minStock", 0] },
-                ],
-              },
-            ],
-          },
-        },
-      ],
-    });
-  }
-
-  if (andParts.length > 0) {
-    filters.$and = andParts;
-  }
-
-  return filters;
-};
-
-const listProductsWithPagination = async (req, res, options = {}) => {
-  try {
-    const { lowStockOnly = false, sort = { createdAt: -1 } } = options;
-
-    const filters = buildProductsFilters(req, { lowStockOnly });
-    const { page, limit } = parsePagination(req, 50, 200);
-
-    const total = await Product.countDocuments(filters);
-
-    const products = await Product.find(filters)
-      .sort(sort)
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    return sendSuccess(res, {
-      pagination: { page, limit, total },
-      products: clean(products),
-    });
-  } catch (error) {
-    return sendError(res, error.message);
-  }
-};
-
 const createProduct = async (req, res) => {
   try {
     const workspaceId = req.user.workspaceId;
 
-    const allowed = [
-      "id",
-      "name",
-      "category",
-      "purchasePrice",
-      "salePrice",
-      "quantity",
-      "minStock",
-      "createdAt",
-    ];
+    // ✅ allowlist to prevent external tampering
+    const allowed = ["id", "name", "category", "purchasePrice", "salePrice", "quantity", "minStock", "createdAt"];
     const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
-    if (extra) {
-      return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
-    }
+    if (extra) return sendFail(res, { message: `الحقل '${extra}' غير مسموح به` }, 400);
 
     const { id, name, category, purchasePrice, salePrice } = req.body;
     let { quantity, minStock, createdAt } = req.body;
 
     const pid = norm(id);
-    if (!pid) return sendFail(res, { id: "Product ID is required" }, 400);
+    if (!pid) return sendFail(res, { id: "كود المنتج مطلوب" }, 400);
 
     const existing = await Product.findOne({ workspaceId, id: pid }).select("_id");
-    if (existing) return sendFail(res, { id: "Product ID already exists" }, 409);
+    if (existing) return sendFail(res, { id: "كود المنتج مستخدم بالفعل" }, 409);
 
+    // defaults
     const qty = quantity == null ? 0 : Number(quantity);
     const ms = minStock == null ? 0 : Number(minStock);
 
@@ -157,6 +49,7 @@ const createProduct = async (req, res) => {
       minStock: ms,
     });
 
+    // keep backward compatibility: allow setting createdAt if provided
     if (createdAt) {
       const d = new Date(createdAt);
       if (!Number.isNaN(d.getTime())) newProduct.createdAt = d;
@@ -166,7 +59,7 @@ const createProduct = async (req, res) => {
     return sendSuccess(res, clean(newProduct), 201);
   } catch (error) {
     if (error?.code === 11000) {
-      return sendFail(res, { id: "Product ID already exists" }, 409);
+      return sendFail(res, { id: "كود المنتج مستخدم بالفعل" }, 409);
     }
     if (error.name === "ValidationError") {
       return sendFail(res, handleValidationError(error), 400);
@@ -176,17 +69,40 @@ const createProduct = async (req, res) => {
 };
 
 const getProducts = async (req, res) => {
-  return listProductsWithPagination(req, res, {
-    lowStockOnly: false,
-    sort: { createdAt: -1 },
-  });
+  try {
+    const workspaceId = req.user.workspaceId;
+    const products = await Product.find({ workspaceId }).sort({ createdAt: -1 });
+    return sendSuccess(res, clean(products));
+  } catch (error) {
+    return sendError(res, error.message);
+  }
 };
 
+// ✅ per-product minStock (no global threshold)
 const getLowStockProducts = async (req, res) => {
-  return listProductsWithPagination(req, res, {
-    lowStockOnly: true,
-    sort: { quantity: 1, name: 1 },
-  });
+  try {
+    const workspaceId = req.user.workspaceId;
+
+    const products = await Product.find({
+      workspaceId,
+      $or: [
+        { quantity: 0 },
+        {
+          $expr: {
+            $and: [
+              { $gt: [{ $ifNull: ["$quantity", 0] }, 0] },
+              { $gt: [{ $ifNull: ["$minStock", 0] }, 0] },
+              { $lt: [{ $ifNull: ["$quantity", 0] }, { $ifNull: ["$minStock", 0] }] },
+            ],
+          },
+        },
+      ],
+    }).sort({ quantity: 1, name: 1 });
+
+    return sendSuccess(res, clean(products));
+  } catch (error) {
+    return sendError(res, error.message);
+  }
 };
 
 const updateProduct = async (req, res) => {
@@ -194,17 +110,16 @@ const updateProduct = async (req, res) => {
     const workspaceId = req.user.workspaceId;
     const { id } = req.params;
 
+    // ✅ allowlist (important: quantity is NOT editable here)
     const allowed = ["id", "name", "category", "purchasePrice", "salePrice", "minStock"];
     const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
-    if (extra) {
-      return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
-    }
+    if (extra) return sendFail(res, { message: `الحقل '${extra}' غير مسموح به` }, 400);
 
     const newId = req.body.id ? norm(req.body.id) : null;
 
     if (newId && newId !== id) {
       const exists = await Product.findOne({ workspaceId, id: newId }).select("_id");
-      if (exists) return sendFail(res, { id: "New Product ID already exists" }, 409);
+      if (exists) return sendFail(res, { id: "كود المنتج الجديد مستخدم بالفعل" }, 409);
     }
 
     const patch = {};
@@ -221,12 +136,12 @@ const updateProduct = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    if (!updatedProduct) return sendFail(res, { id: "Product not found" }, 404);
+    if (!updatedProduct) return sendFail(res, { id: "المنتج غير موجود" }, 404);
 
     return sendSuccess(res, clean(updatedProduct));
   } catch (error) {
     if (error?.code === 11000) {
-      return sendFail(res, { id: "New Product ID already exists" }, 409);
+      return sendFail(res, { id: "كود المنتج الجديد مستخدم بالفعل" }, 409);
     }
     if (error.name === "ValidationError") {
       return sendFail(res, handleValidationError(error), 400);
@@ -241,19 +156,29 @@ const deleteProduct = async (req, res) => {
     const { id } = req.params;
 
     const product = await Product.findOneAndDelete({ workspaceId, id: norm(id) });
-    if (!product) return sendFail(res, { id: "Product not found" }, 404);
+    if (!product) return sendFail(res, { id: "المنتج غير موجود" }, 404);
 
-    return sendSuccess(res, { message: "Product deleted successfully" });
+    return sendSuccess(res, { message: "تم حذف المنتج بنجاح" });
   } catch (error) {
     return sendError(res, error.message);
   }
 };
 
 const searchProducts = async (req, res) => {
-  return listProductsWithPagination(req, res, {
-    lowStockOnly: false,
-    sort: { createdAt: -1 },
-  });
+  try {
+    const workspaceId = req.user.workspaceId;
+    const { id, name, category } = req.query;
+
+    const filters = { workspaceId };
+    if (id) filters.id = { $regex: id, $options: "i" };
+    if (name) filters.name = { $regex: name, $options: "i" };
+    if (category) filters.category = { $regex: category, $options: "i" };
+
+    const products = await Product.find(filters).sort({ createdAt: -1 });
+    return sendSuccess(res, clean(products));
+  } catch (error) {
+    return sendError(res, error.message);
+  }
 };
 
 const autoFillProduct = async (req, res) => {
@@ -262,12 +187,11 @@ const autoFillProduct = async (req, res) => {
     const { id, name } = req.query;
 
     if (!id && !name) {
-      return sendFail(res, { message: "ID or Name is required" }, 400);
+      return sendFail(res, { message: "الكود أو الاسم مطلوب" }, 400);
     }
-
     if (id) {
       const product = await Product.findOne({ workspaceId, id: norm(id) });
-      if (!product) return sendFail(res, { message: "Product not found" }, 404);
+      if (!product) return sendFail(res, { message: "المنتج غير موجود" }, 404);
       return sendSuccess(res, clean(product));
     }
 
@@ -279,14 +203,13 @@ const autoFillProduct = async (req, res) => {
     }).limit(5);
 
     if (matches.length === 0) {
-      return sendFail(res, { message: "Product not found" }, 404);
+      return sendFail(res, { message: "المنتج غير موجود" }, 404);
     }
-
     if (matches.length > 1) {
       return sendFail(
         res,
         {
-          message: "Multiple products have the same name. Please choose one.",
+          message: "يوجد أكثر من منتج بنفس الاسم، برجاء اختيار المنتج الصحيح.",
           candidates: clean(matches).map((p) => ({ id: p.id, name: p.name })),
         },
         409
@@ -337,28 +260,22 @@ const adjustProductStock = async (req, res) => {
 
     const allowed = ["mode", "newQuantity", "delta", "reason", "note"];
     const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
-    if (extra) return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
+    if (extra) return sendFail(res, { message: `الحقل '${extra}' غير مسموح به` }, 400);
 
     const reason = String(req.body.reason || "").trim();
     const note = String(req.body.note || "").trim();
 
     const allowedReasons = ["inventory_count", "opening_balance", "damaged", "correction", "other"];
     if (!reason || !allowedReasons.includes(reason)) {
-      return sendFail(
-        res,
-        { reason: `reason must be one of: ${allowedReasons.join(", ")}` },
-        400
-      );
+      return sendFail(res, { reason: `سبب التسوية يجب أن يكون واحدًا من: ${allowedReasons.join(", ")}` }, 400);
     }
 
     if ((reason === "correction" || reason === "other") && !note) {
-      return sendFail(res, { note: "note is required for reason=correction or other" }, 400);
+      return sendFail(res, { note: "الملاحظة مطلوبة عند اختيار سبب تصحيح أو أخرى" }, 400);
     }
 
-    const product = await Product.findOne({ workspaceId, id: productId }).select(
-      "id name category quantity"
-    );
-    if (!product) return sendFail(res, { id: "Product not found" }, 404);
+    const product = await Product.findOne({ workspaceId, id: productId }).select("id name category quantity");
+    if (!product) return sendFail(res, { id: "المنتج غير موجود" }, 404);
 
     const beforeQty = Number(product.quantity || 0);
 
@@ -370,30 +287,27 @@ const adjustProductStock = async (req, res) => {
     if (mode === "delta" || (mode !== "set" && req.body.delta != null)) {
       const d = Number(req.body.delta);
       if (!Number.isFinite(d) || !Number.isInteger(d) || d === 0) {
-        return sendFail(res, { delta: "delta must be a non-zero integer" }, 400);
+        return sendFail(res, { delta: "مقدار الزيادة أو النقص يجب أن يكون رقمًا صحيحًا لا يساوي صفر" }, 400);
       }
       qtyDelta = d;
       afterQty = beforeQty + d;
     } else {
       const nq = Number(req.body.newQuantity);
       if (!Number.isFinite(nq) || !Number.isInteger(nq) || nq < 0) {
-        return sendFail(res, { newQuantity: "newQuantity must be an integer >= 0" }, 400);
+        return sendFail(res, { newQuantity: "الكمية الجديدة يجب أن تكون رقمًا صحيحًا أكبر من أو يساوي صفر" }, 400);
       }
       afterQty = nq;
       qtyDelta = afterQty - beforeQty;
       if (qtyDelta === 0) {
-        return sendFail(
-          res,
-          { newQuantity: "newQuantity is the same as current quantity" },
-          400
-        );
+        return sendFail(res, { newQuantity: "الكمية الجديدة تساوي الكمية الحالية، أدخل كمية مختلفة للحفظ" }, 400);
       }
     }
 
     if (afterQty < 0) {
-      return sendFail(res, { quantity: "Resulting quantity cannot be negative" }, 400);
+      return sendFail(res, { quantity: "الكمية الناتجة لا يمكن أن تكون أقل من صفر" }, 400);
     }
 
+    // ✅ race-safe update (if quantity changed in between, return 409)
     const updated = await Product.findOneAndUpdate(
       { workspaceId, id: productId, quantity: beforeQty },
       { $set: { quantity: afterQty } },
@@ -401,7 +315,7 @@ const adjustProductStock = async (req, res) => {
     );
 
     if (!updated) {
-      return sendFail(res, { quantity: "Stock changed. Please retry." }, 409);
+      return sendFail(res, { quantity: "تم تغيير المخزون، برجاء المحاولة مرة أخرى." }, 409);
     }
 
     const movement = await StockMovement.create({
@@ -430,6 +344,7 @@ const adjustProductStock = async (req, res) => {
     return sendError(res, error.message);
   }
 };
+
 
 export {
   createProduct,

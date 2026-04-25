@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { productsApi } from "../api/productsApi";
+import { translateApiError } from "../../../services/http/errorMap";
 import AdjustStockModal from "../components/AdjustStockModal";
 
 function formatNumber(n) {
@@ -49,17 +50,24 @@ export default function LowStockProductsPage() {
 
     try {
       const res = await productsApi.getLowStock(nextFilters);
+      const products = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.products)
+          ? res.products
+          : Array.isArray(res?.items)
+            ? res.items
+            : [];
 
-      setItems(Array.isArray(res?.products) ? res.products : []);
+      setItems(products);
       setPaginationState(
         res?.pagination || {
-          total: 0,
+          total: products.length,
           page: Number(nextFilters.page || 1),
           limit: Number(nextFilters.limit || 20),
         }
       );
     } catch (e) {
-      setErr(e.userMessage || "فشل تحميل المنتجات منخفضة المخزون");
+      setErr(translateApiError(e, "فشل تحميل المنتجات منخفضة المخزون"));
       setItems([]);
       setPaginationState({
         total: 0,
@@ -133,7 +141,7 @@ export default function LowStockProductsPage() {
       setAdjusting(null);
       await fetchLow(filters);
     } catch (e) {
-      setErr(e.userMessage || "فشل تسوية المخزون");
+      setErr(translateApiError(e, "فشل تسوية المخزون"));
       throw e;
     } finally {
       setBusy(false);

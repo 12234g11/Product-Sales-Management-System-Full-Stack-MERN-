@@ -39,7 +39,7 @@ export default function InvoiceHeaderCard({
               disabled
             />
             {!isCreated ? (
-              <div className="form-text">سيتم إنشاء الكود تلقائيًا من الباك إند داخل نفس مساحة العمل.</div>
+              <div className="form-text">سيتم إنشاء الكود تلقائيًا.</div>
             ) : null}
           </div>
 

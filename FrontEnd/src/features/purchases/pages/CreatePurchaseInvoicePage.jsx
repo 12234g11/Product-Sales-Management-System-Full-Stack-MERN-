@@ -146,7 +146,7 @@ export default function CreatePurchaseInvoicePage() {
                   readOnly
                 />
                 <div className="form-text">
-                  سيتم إنشاء الكود تلقائيًا من الباك إند داخل نفس مساحة العمل.
+                  سيتم إنشاء الكود تلقائيًا.
                 </div>
               </div>
 

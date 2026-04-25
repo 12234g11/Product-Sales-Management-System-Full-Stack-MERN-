@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { translateApiError } from "../../../services/http/errorMap";
 
 const REASONS = [
   { value: "inventory_count", label: "جرد مخزون" },
@@ -38,6 +39,11 @@ export default function AdjustStockModal({
   const noteRequired = useMemo(
     () => form.reason === "correction" || form.reason === "other",
     [form.reason]
+  );
+
+  const translatedError = useMemo(
+    () => (error ? translateApiError(error) : ""),
+    [error]
   );
 
   const submit = async (e) => {
@@ -91,7 +97,7 @@ export default function AdjustStockModal({
                   </div>
                 </div>
 
-                {error ? <div className="alert alert-danger">{error}</div> : null}
+                {translatedError ? <div className="alert alert-danger">{translatedError}</div> : null}
 
                 <div className="row g-3">
                   <div className="col-12">
