@@ -4,9 +4,9 @@ export function formatNumber(n) {
 
 export function formatMoney(n) {
   return new Intl.NumberFormat("ar-EG", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(n || 0));
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(Number(n || 0)));
 }
 
 export function formatDateTime(value) {

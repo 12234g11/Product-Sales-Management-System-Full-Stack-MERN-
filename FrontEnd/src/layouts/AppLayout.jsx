@@ -2,6 +2,9 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../App/providers/AuthProvider";
 import { Offcanvas } from "bootstrap";
 import { useEffect, useState } from "react";
+import { FaTruck } from "react-icons/fa";
+import { FiEdit3, FiLogOut, FiMenu } from "react-icons/fi";
+import { MdAssignmentReturn, MdDashboard, MdGroup, MdInventory2, MdLowPriority, MdPointOfSale, MdReceiptLong, MdShoppingCart, MdSwapHoriz } from "react-icons/md";
 import AppFooter from "../components/AppFooter";
 import EditWorkspaceNameModal from "../features/workspace/components/EditWorkspaceNameModal";
 import { updateWorkspaceNameApi } from "../features/workspace/api/workspaceApi";
@@ -17,7 +20,7 @@ function WorkspaceEditButton({ onClick, className = "" }) {
       aria-label="تغيير اسم المحل"
       style={{ width: 28, height: 28, opacity: 0.9 }}
     >
-      <i className="fa-solid fa-pen-to-square" />
+      <FiEdit3 aria-hidden="true" />
     </button>
   );
 }
@@ -36,20 +39,20 @@ export default function AppLayout() {
 
   const menu = [
     ...(role === "admin"
-      ? [{ to: "/dashboard", label: "لوحة التحكم", end: true }]
+      ? [{ to: "/dashboard", label: "لوحة التحكم", end: true, icon: <MdDashboard /> }]
       : []),
 
-    { to: "/products", label: "المنتجات", end: true },
-    { to: "/suppliers", label: "الموردين" },
-    { to: "/purchases", label: "فواتير الشراء" },
-    { to: "/sales/new", label: "إنشاء فاتورة بيع", end: true },
-    { to: "/sales", label: "فواتير البيع", end: true },
-    { to: "/sales/returns", label: "المرتجعات", end: true },
-    { to: "/stock-movements", label: "حركة المخزون", end: true },
-    { to: "/products/low-stock", label: "مخزون منخفض", end: true },
+    { to: "/products", label: "المنتجات", end: true, icon: <MdInventory2 /> },
+    { to: "/suppliers", label: "الموردين", icon: <FaTruck /> },
+    { to: "/purchases", label: "فواتير الشراء", icon: <MdShoppingCart /> },
+    { to: "/sales/new", label: "إنشاء فاتورة بيع", end: true, icon: <MdPointOfSale /> },
+    { to: "/sales", label: "فواتير البيع", end: true, icon: <MdReceiptLong /> },
+    { to: "/sales/returns", label: "المرتجعات", end: true, icon: <MdAssignmentReturn /> },
+    { to: "/stock-movements", label: "حركة المخزون", end: true, icon: <MdSwapHoriz /> },
+    { to: "/products/low-stock", label: "مخزون منخفض", end: true, icon: <MdLowPriority /> },
 
     ...(role === "admin"
-      ? [{ to: "/users", label: "المستخدمين", end: true }]
+      ? [{ to: "/users", label: "المستخدمين", end: true, icon: <MdGroup /> }]
       : []),
   ];
 
@@ -211,6 +214,7 @@ export default function AppLayout() {
             data-bs-target="#pmsSidebar"
             aria-controls="pmsSidebar"
           >
+            <FiMenu className="ms-1" aria-hidden="true" />
             القائمة
           </button>
 
@@ -220,6 +224,7 @@ export default function AppLayout() {
           </div>
 
           <button className="btn btn-outline-danger" onClick={handleLogout}>
+            <FiLogOut className="ms-1" aria-hidden="true" />
             خروج
           </button>
         </div>
@@ -250,13 +255,15 @@ export default function AppLayout() {
                         end={Boolean(m.end)}
                         className={linkClass}
                       >
-                        {m.label}
+                        <span className="app-nav-link-icon" aria-hidden="true">{m.icon}</span>
+                        <span>{m.label}</span>
                       </NavLink>
                     ))}
                   </nav>
 
                   <div className="mt-3">
                     <button className="btn btn-outline-danger w-100" onClick={handleLogout}>
+                      <FiLogOut className="ms-1" aria-hidden="true" />
                       تسجيل الخروج
                     </button>
                   </div>
@@ -308,13 +315,15 @@ export default function AppLayout() {
                       className={linkClass}
                       onClick={closeMobileSidebar}
                     >
-                      {m.label}
+                      <span className="app-nav-link-icon" aria-hidden="true">{m.icon}</span>
+                      <span>{m.label}</span>
                     </NavLink>
                   ))}
                 </nav>
 
                 <div className="mt-3">
                   <button className="btn btn-outline-danger w-100" onClick={handleLogout}>
+                    <FiLogOut className="ms-1" aria-hidden="true" />
                     تسجيل الخروج
                   </button>
                 </div>

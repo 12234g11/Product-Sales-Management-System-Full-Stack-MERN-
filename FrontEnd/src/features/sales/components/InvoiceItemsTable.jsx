@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FiSave, FiTrash2 } from "react-icons/fi";
 import {
   formatMoney,
   formatNumber,
@@ -29,10 +30,11 @@ function EditableNumber({ value, min = 0, step = 1, disabled, onSave }) {
       />
       <button
         type="button"
-        className="btn btn-sm btn-outline-primary w-100"
+        className="btn btn-sm btn-outline-primary w-100 d-inline-flex align-items-center justify-content-center gap-1"
         disabled={disabled}
         onClick={() => onSave(Number(local))}
       >
+        <FiSave aria-hidden="true" />
         حفظ
       </button>
     </div>
@@ -152,10 +154,11 @@ export default function InvoiceItemsTable({
                       {draft ? (
                         <button
                           type="button"
-                          className="btn btn-sm btn-outline-danger"
+                          className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1"
                           disabled={busy}
                           onClick={() => onRemoveItem(item)}
                         >
+                          <FiTrash2 aria-hidden="true" />
                           حذف
                         </button>
                       ) : (

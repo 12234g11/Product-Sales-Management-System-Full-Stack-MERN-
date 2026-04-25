@@ -17,7 +17,7 @@ export default function NewSalePage() {
   const invoiceIdFromQuery = searchParams.get("invoiceId") || "";
   const activeInvoiceId = invoiceIdParam || invoiceIdFromQuery || "";
 
-  const [draftForm, setDraftForm] = useState({ invoiceCode: "", name: "" });
+  const [draftForm, setDraftForm] = useState({ invoiceCode: "يتم توليده تلقائيًا", name: "" });
   const [invoice, setInvoice] = useState(null);
   const [invoiceReturns, setInvoiceReturns] = useState({ invoice: null, returns: [] });
 
@@ -105,15 +105,9 @@ export default function NewSalePage() {
   const handleCreateDraft = async () => {
     clearFlash();
 
-    if (!draftForm.invoiceCode.trim()) {
-      setError("كود الفاتورة إجباري");
-      return;
-    }
-
     setCreatingDraft(true);
     try {
       const created = await salesApi.createDraft({
-        invoiceCode: draftForm.invoiceCode.trim(),
         name: draftForm.name.trim(),
       });
       await syncInvoiceState(created, "تم إنشاء المسودة بنجاح");

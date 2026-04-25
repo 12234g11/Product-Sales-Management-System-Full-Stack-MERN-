@@ -1,3 +1,4 @@
+import { FiFileText, FiPlusCircle } from "react-icons/fi";
 import { formatDateTime, invoiceStatusLabel } from "../utils/salesFormatters";
 
 export default function InvoiceHeaderCard({
@@ -15,7 +16,7 @@ export default function InvoiceHeaderCard({
       <div className="card-body">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
-            <h5 className="m-0">بيانات الفاتورة</h5>
+            <h5 className="m-0 d-inline-flex align-items-center gap-2"><FiFileText aria-hidden="true" />بيانات الفاتورة</h5>
             <div className="text-secondary small mt-1">
               ابدأ بمسودة جديدة ثم أضف الأصناف والخصومات وبعدها أكد البيع.
             </div>
@@ -29,14 +30,17 @@ export default function InvoiceHeaderCard({
 
         <div className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">كود الفاتورة *</label>
+            <label className="form-label">كود الفاتورة</label>
             <input
               className="form-control"
               name="invoiceCode"
-              value={draftForm.invoiceCode}
-              onChange={onDraftChange}
-              disabled={isCreated || busy}
+              value={isCreated ? invoice.invoiceCode : "يتم توليده تلقائيًا"}
+              readOnly
+              disabled
             />
+            {!isCreated ? (
+              <div className="form-text">سيتم إنشاء الكود تلقائيًا من الباك إند داخل نفس مساحة العمل.</div>
+            ) : null}
           </div>
 
           <div className="col-12 col-md-6">
@@ -53,7 +57,8 @@ export default function InvoiceHeaderCard({
 
         {!isCreated ? (
           <div className="mt-3">
-            <button className="btn btn-primary" onClick={onCreateDraft} disabled={creating || busy}>
+            <button className="btn btn-primary d-inline-flex align-items-center gap-1" onClick={onCreateDraft} disabled={creating || busy}>
+              <FiPlusCircle aria-hidden="true" />
               {creating ? "جاري إنشاء المسودة..." : "إنشاء مسودة"}
             </button>
           </div>

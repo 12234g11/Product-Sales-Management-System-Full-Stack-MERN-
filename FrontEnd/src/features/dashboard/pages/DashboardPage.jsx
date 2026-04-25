@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { FiRefreshCw } from "react-icons/fi";
+import { MdAssignmentReturn, MdCategory, MdGroup, MdInventory2, MdLocalShipping, MdMoneyOff, MdPointOfSale, MdShoppingCart, MdTrendingUp, MdWarning } from "react-icons/md";
 import { useDashboard } from "../hooks/useDashboard";
 import SalesTrendColumnChart from "../components/SalesTrendColumnChart";
 
@@ -6,7 +8,9 @@ function formatNumber(n) {
     return new Intl.NumberFormat("ar-EG").format(Number(n || 0));
 }
 function formatCurrency(n) {
-    return new Intl.NumberFormat("ar-EG").format(Number(n || 0));
+  return `${new Intl.NumberFormat("ar-EG", {
+    maximumFractionDigits: 0,
+  }).format(Math.round(Number(n || 0)))} ج.م`;
 }
 function formatDate(d) {
     if (!d) return "";
@@ -25,12 +29,43 @@ function arabicPeriodLabel(label) {
     if (s === "today") return "اليوم";
     return label || "";
 }
-function StatCard({ title, value, sub, loading }) {
+const statIcons = {
+    productsCount: <MdInventory2 />,
+    categoriesCount: <MdCategory />,
+    totalStockUnits: <MdInventory2 />,
+    outOfStockCount: <MdWarning />,
+    belowMinStockCount: <MdWarning />,
+    inStockCount: <MdInventory2 />,
+    inventoryPurchaseValue: <MdLocalShipping />,
+    inventorySaleValue: <MdPointOfSale />,
+    inventoryPotentialProfit: <MdTrendingUp />,
+    salesInvoicesCount: <MdPointOfSale />,
+    salesRevenue: <MdPointOfSale />,
+    netRevenue: <MdTrendingUp />,
+    purchaseInvoicesCount: <MdShoppingCart />,
+    purchaseSpend: <MdShoppingCart />,
+    returnsCount: <MdAssignmentReturn />,
+    refundTotal: <MdAssignmentReturn />,
+    refundRestockedTotal: <MdAssignmentReturn />,
+    refundDamagedTotal: <MdMoneyOff />,
+    cogsEstimated: <MdMoneyOff />,
+    realizedProfitEstimated: <MdTrendingUp />,
+    usersTotal: <MdGroup />,
+    adminsCount: <MdGroup />,
+    workersCount: <MdGroup />,
+    activeUsersCount: <MdGroup />,
+    disabledUsersCount: <MdGroup />,
+};
+
+function StatCard({ title, value, sub, loading, icon }) {
     return (
         <div className="col-12 col-md-6 col-xl-3">
             <div className="card h-100">
                 <div className="card-body">
-                    <div className="text-secondary small">{title}</div>
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                        <div className="text-secondary small">{title}</div>
+                        {icon ? <span className="dashboard-card-icon" aria-hidden="true">{icon}</span> : null}
+                    </div>
                     <div className="fs-4 fw-bold">{loading ? "..." : value}</div>
                     {sub ? <div className="small text-secondary">{sub}</div> : null}
                 </div>
@@ -108,21 +143,22 @@ export default function DashboardPage() {
                 title: "المخزون والمنتجات",
                 periodText: nowText,
                 cards: [
-                    { key: "productsCount", title: "عدد المنتجات", value: formatNumber(inv.productsCount) },
-                    { key: "categoriesCount", title: "عدد التصنيفات", value: formatNumber(inv.categoriesCount) },
-                    { key: "totalStockUnits", title: "إجمالي وحدات المخزون", value: formatNumber(inv.totalStockUnits) },
-                    { key: "outOfStockCount", title: "منتجات نفد مخزونها", value: formatNumber(inv.outOfStockCount) },
+                    { key: "productsCount", title: "عدد المنتجات", value: formatNumber(inv.productsCount), icon: statIcons.productsCount },
+                    { key: "categoriesCount", title: "عدد التصنيفات", value: formatNumber(inv.categoriesCount), icon: statIcons.categoriesCount },
+                    { key: "totalStockUnits", title: "إجمالي وحدات المخزون", value: formatNumber(inv.totalStockUnits), icon: statIcons.totalStockUnits },
+                    { key: "outOfStockCount", title: "منتجات نفد مخزونها", value: formatNumber(inv.outOfStockCount), icon: statIcons.outOfStockCount },
 
-                    { key: "belowMinStockCount", title: "منتجات أقل من الحد الأدنى", value: formatNumber(inv.belowMinStockCount) },
-                    { key: "inStockCount", title: "منتجات متوفرة", value: formatNumber(inv.inStockCount) },
-                    { key: "inventoryPurchaseValue", title: "قيمة شراء المخزون", value: formatCurrency(inv.inventoryPurchaseValue) },
-                    { key: "inventorySaleValue", title: "قيمة بيع المخزون", value: formatCurrency(inv.inventorySaleValue) },
+                    { key: "belowMinStockCount", title: "منتجات أقل من الحد الأدنى", value: formatNumber(inv.belowMinStockCount), icon: statIcons.belowMinStockCount },
+                    { key: "inStockCount", title: "منتجات متوفرة", value: formatNumber(inv.inStockCount), icon: statIcons.inStockCount },
+                    { key: "inventoryPurchaseValue", title: "قيمة شراء المخزون", value: formatCurrency(inv.inventoryPurchaseValue), icon: statIcons.inventoryPurchaseValue },
+                    { key: "inventorySaleValue", title: "قيمة بيع المخزون", value: formatCurrency(inv.inventorySaleValue), icon: statIcons.inventorySaleValue },
 
                     {
                         key: "inventoryPotentialProfit",
                         title: "ربح متوقع (على المخزون)",
                         value: formatCurrency(inv.inventoryPotentialProfit),
                         sub: inv.noMinStockCount ? `بدون حد أدنى: ${formatNumber(inv.noMinStockCount)}` : "",
+                        icon: statIcons.inventoryPotentialProfit,
                     },
                 ],
             },
@@ -130,46 +166,46 @@ export default function DashboardPage() {
                 title: "المبيعات",
                 periodText: period,
                 cards: [
-                    { key: "salesInvoicesCount", title: "عدد فواتير البيع", value: formatNumber(sales.salesInvoicesCount) },
-                    { key: "salesRevenue", title: "إجمالي المبيعات", value: formatCurrency(sales.salesRevenue) },
-                    { key: "netRevenue", title: "صافي المبيعات", value: formatCurrency(sales.netRevenue), sub: "المبيعات - المرتجعات" },
+                    { key: "salesInvoicesCount", title: "عدد فواتير البيع", value: formatNumber(sales.salesInvoicesCount), icon: statIcons.salesInvoicesCount },
+                    { key: "salesRevenue", title: "إجمالي المبيعات", value: formatCurrency(sales.salesRevenue), icon: statIcons.salesRevenue },
+                    { key: "netRevenue", title: "صافي المبيعات", value: formatCurrency(sales.netRevenue), sub: "المبيعات - المرتجعات", icon: statIcons.netRevenue },
                 ],
             },
             {
                 title: "المشتريات",
                 periodText: period,
                 cards: [
-                    { key: "purchaseInvoicesCount", title: "عدد فواتير الشراء", value: formatNumber(purchases.purchaseInvoicesCount) },
-                    { key: "purchaseSpend", title: "إجمالي مصروف الشراء", value: formatCurrency(purchases.purchaseSpend) },
+                    { key: "purchaseInvoicesCount", title: "عدد فواتير الشراء", value: formatNumber(purchases.purchaseInvoicesCount), icon: statIcons.purchaseInvoicesCount },
+                    { key: "purchaseSpend", title: "إجمالي مصروف الشراء", value: formatCurrency(purchases.purchaseSpend), icon: statIcons.purchaseSpend },
                 ],
             },
             {
                 title: "المرتجعات",
                 periodText: period,
                 cards: [
-                    { key: "returnsCount", title: "عدد المرتجعات", value: formatNumber(returns.returnsCount) },
-                    { key: "refundTotal", title: "إجمالي مبلغ المرتجعات", value: formatCurrency(returns.refundTotal) },
-                    { key: "refundRestockedTotal", title: "مبلغ (أُعيد للمخزون)", value: formatCurrency(returns.refundRestockedTotal) },
-                    { key: "refundDamagedTotal", title: "مبلغ (تالف)", value: formatCurrency(returns.refundDamagedTotal) },
+                    { key: "returnsCount", title: "عدد المرتجعات", value: formatNumber(returns.returnsCount), icon: statIcons.returnsCount },
+                    { key: "refundTotal", title: "إجمالي مبلغ المرتجعات", value: formatCurrency(returns.refundTotal), icon: statIcons.refundTotal },
+                    { key: "refundRestockedTotal", title: "مبلغ (أُعيد للمخزون)", value: formatCurrency(returns.refundRestockedTotal), icon: statIcons.refundRestockedTotal },
+                    { key: "refundDamagedTotal", title: "مبلغ (تالف)", value: formatCurrency(returns.refundDamagedTotal), icon: statIcons.refundDamagedTotal },
                 ],
             },
             {
                 title: "الأرباح",
                 periodText: period,
                 cards: [
-                    { key: "cogsEstimated", title: "تكلفة مبيعات (تقديري)", value: formatCurrency(profit.cogsEstimated) },
-                    { key: "realizedProfitEstimated", title: "ربح فعلي (تقديري)", value: formatCurrency(profit.realizedProfitEstimated) },
+                    { key: "cogsEstimated", title: "تكلفة مبيعات (تقديري)", value: formatCurrency(profit.cogsEstimated), icon: statIcons.cogsEstimated },
+                    { key: "realizedProfitEstimated", title: "ربح فعلي (تقديري)", value: formatCurrency(profit.realizedProfitEstimated), icon: statIcons.realizedProfitEstimated },
                 ],
             },
             {
                 title: "المستخدمين",
                 periodText: nowText,
                 cards: [
-                    { key: "usersTotal", title: "عدد المستخدمين", value: formatNumber(users.usersTotal) },
-                    { key: "adminsCount", title: "عدد الأدمن", value: formatNumber(users.adminsCount) },
-                    { key: "workersCount", title: "عدد العاملين", value: formatNumber(users.workersCount) },
-                    { key: "activeUsersCount", title: "مفعّلين", value: formatNumber(users.activeUsersCount) },
-                    { key: "disabledUsersCount", title: "غير مفعّلين", value: formatNumber(users.disabledUsersCount) },
+                    { key: "usersTotal", title: "عدد المستخدمين", value: formatNumber(users.usersTotal), icon: statIcons.usersTotal },
+                    { key: "adminsCount", title: "عدد الأدمن", value: formatNumber(users.adminsCount), icon: statIcons.adminsCount },
+                    { key: "workersCount", title: "عدد العاملين", value: formatNumber(users.workersCount), icon: statIcons.workersCount },
+                    { key: "activeUsersCount", title: "مفعّلين", value: formatNumber(users.activeUsersCount), icon: statIcons.activeUsersCount },
+                    { key: "disabledUsersCount", title: "غير مفعّلين", value: formatNumber(users.disabledUsersCount), icon: statIcons.disabledUsersCount },
                 ],
             },
         ];
@@ -259,7 +295,8 @@ export default function DashboardPage() {
                                         </div>
                                     )}
 
-                                    <button className="btn btn-outline-primary btn-sm" onClick={refresh}>
+                                    <button className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" onClick={refresh}>
+                                        <FiRefreshCw aria-hidden="true" />
                                         تحديث
                                     </button>
                                 </div>
@@ -343,7 +380,8 @@ export default function DashboardPage() {
                                         </>
                                     )}
 
-                                    <button className="btn btn-outline-primary btn-sm" onClick={refresh}>
+                                    <button className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" onClick={refresh}>
+                                        <FiRefreshCw aria-hidden="true" />
                                         تحديث
                                     </button>
                                 </div>
@@ -370,6 +408,7 @@ export default function DashboardPage() {
                                                 value={c.value}
                                                 sub={c.sub}
                                                 loading={loading}
+                                                icon={c.icon}
                                             />
                                         ))}
                                     </div>

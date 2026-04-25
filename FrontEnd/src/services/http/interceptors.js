@@ -1,28 +1,18 @@
 import { authStorage } from "../storage/authStorage";
 import { axiosClient } from "./axiosClient";
+import { translateApiError } from "./errorMap";
 
 let unauthorizedHandler = null;
+let interceptorsReady = false;
 
 export function setUnauthorizedHandler(fn) {
   unauthorizedHandler = fn;
 }
 
-function extractMessage(error) {
-  const body = error?.response?.data;
-
-  if (body?.message) return body.message;
-
-  const dataObj = body?.data;
-  if (dataObj && typeof dataObj === "object") {
-    const firstStr = Object.values(dataObj).find((v) => typeof v === "string");
-    if (firstStr) return firstStr;
-    if (typeof dataObj.message === "string") return dataObj.message;
-  }
-
-  return error?.message || "حدث خطأ غير متوقع";
-}
-
 export function setupInterceptors() {
+  if (interceptorsReady) return;
+  interceptorsReady = true;
+
   axiosClient.interceptors.request.use((config) => {
     const token = authStorage.getToken();
     if (token) {
@@ -36,7 +26,7 @@ export function setupInterceptors() {
     (error) => {
       const status = error?.response?.status;
 
-      error.userMessage = extractMessage(error);
+      error.userMessage = translateApiError(error);
 
       if (status === 401) {
         unauthorizedHandler?.();

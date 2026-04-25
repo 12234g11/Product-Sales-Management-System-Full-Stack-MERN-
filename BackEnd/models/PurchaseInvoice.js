@@ -7,7 +7,17 @@ const purchaseItemSchema = new mongoose.Schema(
         productCategory: { type: String, default: "", trim: true },
 
         purchasePrice: { type: Number, required: [true, "purchasePrice is required"], min: 0 },
+        salePriceAtPurchase: { type: Number, default: null, min: 0 },
         quantity: { type: Number, required: [true, "quantity is required"], min: 1 },
+
+        priceMode: {
+            type: String,
+            enum: ["same", "new_product", "merge_update"],
+            default: "same",
+        },
+        newSalePrice: { type: Number, default: null, min: 0 },
+        oldPurchasePriceSnapshot: { type: Number, default: null, min: 0 },
+        oldSalePriceSnapshot: { type: Number, default: null, min: 0 },
     },
     { _id: true }
 );

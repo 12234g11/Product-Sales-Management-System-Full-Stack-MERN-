@@ -200,3 +200,60 @@ body {
     font-size: 0.74rem;
   }
 }
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.app-nav-link:hover,
+.app-nav-link:focus-visible {
+  transform: translateX(-3px);
+}
+
+.app-nav-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.card {
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.card:hover {
+  transform: translateX(-3px);
+}
+
+.dashboard-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  opacity: 0.78;
+}
+
+.form-control:focus,
+.form-select:focus,
+.btn:focus-visible,
+.list-group-item:focus-visible {
+  box-shadow: 0 0 0 .2rem rgba(13, 110, 253, 0.18);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-link,
+  .card {
+    transition: none;
+  }
+
+  .app-nav-link:hover,
+  .app-nav-link:focus-visible,
+  .card:hover {
+    transform: none;
+  }
+}

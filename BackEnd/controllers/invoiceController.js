@@ -31,17 +31,28 @@ const loadDiscountLimits = async (userId) => {
   };
 };
 
+const getNextNumericInvoiceCode = async ({ Model, workspaceId }) => {
+  const last = await Model.findOne({
+    workspaceId,
+    invoiceCode: { $regex: /^\d+$/ },
+  })
+    .select("invoiceCode")
+    .sort({ invoiceCode: -1 })
+    .collation({ locale: "en", numericOrdering: true })
+    .lean();
+
+  const current = Number(last?.invoiceCode || 0);
+  return String(Number.isFinite(current) && current >= 0 ? current + 1 : 1);
+};
+
 // POST /api/invoices
 const createInvoiceDraft = async (req, res) => {
   try {
     const workspaceId = req.user.workspaceId;
-    const { invoiceCode, name } = req.body;
 
-    const code = norm(invoiceCode);
-    if (!code) return sendFail(res, { invoiceCode: "invoiceCode is required" }, 400);
-
-    const exists = await SaleInvoice.findOne({ workspaceId, invoiceCode: code }).select("_id");
-    if (exists) return sendFail(res, { invoiceCode: "Invoice code already exists" }, 409);
+    const allowed = ["invoiceCode", "name"];
+    const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
+    if (extra) return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
 
     // ✅ prefer middleware name (fallback to DB)
     let createdByName = String(req.user.name || "").trim();
@@ -51,23 +62,47 @@ const createInvoiceDraft = async (req, res) => {
       createdByName = creator.name;
     }
 
-    const inv = await SaleInvoice.create({
-      workspaceId,
-      invoiceCode: code,
-      name: String(name || "").trim(),
-      status: "draft",
-      createdByUserId: req.user.userId,
-      createdByName,
-      items: [],
-      invoiceDiscountPercent: 0,
-      returnStatus: "none",
-      totalRefundedAmount: 0,
-    });
+    let lastDuplicateError = null;
 
-    recalcInvoiceTotals(inv);
-    await inv.save();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = await getNextNumericInvoiceCode({ Model: SaleInvoice, workspaceId });
 
-    return sendSuccess(res, { invoice: clean(inv, { withItems: true }) }, 201);
+      try {
+        const inv = await SaleInvoice.create({
+          workspaceId,
+          invoiceCode: code,
+          name: String(req.body.name || "").trim(),
+          status: "draft",
+          createdByUserId: req.user.userId,
+          createdByName,
+          items: [],
+          invoiceDiscountPercent: 0,
+          returnStatus: "none",
+          totalRefundedAmount: 0,
+        });
+
+        recalcInvoiceTotals(inv);
+        await inv.save();
+
+        return sendSuccess(res, { invoice: clean(inv, { withItems: true }) }, 201);
+      } catch (e) {
+        if (e?.code === 11000) {
+          lastDuplicateError = e;
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (lastDuplicateError) {
+      return sendFail(
+        res,
+        { invoiceCode: "تعذر توليد كود فاتورة غير مكرر، حاول مرة أخرى" },
+        409
+      );
+    }
+
+    return sendError(res, "تعذر إنشاء الفاتورة", 500);
   } catch (error) {
     if (error?.code === 11000) return sendFail(res, { invoiceCode: "Invoice code already exists" }, 409);
     if (error?.name === "ValidationError") return sendFail(res, { message: error.message }, 400);

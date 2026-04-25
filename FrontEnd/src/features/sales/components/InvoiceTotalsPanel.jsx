@@ -1,3 +1,4 @@
+import { FiCheckCircle, FiPrinter, FiSave } from "react-icons/fi";
 import { formatMoney, formatNumber, returnStatusLabel } from "../utils/salesFormatters";
 
 export default function InvoiceTotalsPanel({
@@ -68,6 +69,7 @@ export default function InvoiceTotalsPanel({
               onClick={onApplyDiscount}
               disabled={disabled || discountBusy}
             >
+<FiSave className="ms-1" aria-hidden="true" />
               {discountBusy ? "جاري التطبيق..." : "تطبيق"}
             </button>
           </div>
@@ -79,11 +81,13 @@ export default function InvoiceTotalsPanel({
             onClick={onFinalize}
             disabled={disabled || !hasItems || finalizeBusy}
           >
+<FiCheckCircle className="ms-1" aria-hidden="true" />
             {finalizeBusy ? "جاري التأكيد..." : "تأكيد البيع"}
           </button>
 
           {showPrint && (
             <button className="btn btn-info fw-bold" onClick={onPrint}>
+<FiPrinter className="ms-1" aria-hidden="true" />
               طباعة الفاتورة PDF
             </button>
           )}

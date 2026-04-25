@@ -33,6 +33,20 @@ const parseDateEnd = (s) => {
   return d;
 };
 
+const getNextNumericInvoiceCode = async ({ Model, workspaceId }) => {
+  const last = await Model.findOne({
+    workspaceId,
+    invoiceCode: { $regex: /^\d+$/ },
+  })
+    .select("invoiceCode")
+    .sort({ invoiceCode: -1 })
+    .collation({ locale: "en", numericOrdering: true })
+    .lean();
+
+  const current = Number(last?.invoiceCode || 0);
+  return String(Number.isFinite(current) && current >= 0 ? current + 1 : 1);
+};
+
 const resolveSupplier = async ({ workspaceId, supplierId, supplierName, reqUser }) => {
   const sid = supplierId ? String(supplierId).trim() : "";
   const sname = norm(supplierName);
@@ -84,12 +98,6 @@ const createPurchaseDraft = async (req, res) => {
     const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
     if (extra) return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
 
-    const invoiceCode = norm(req.body.invoiceCode);
-    if (!invoiceCode) return sendFail(res, { invoiceCode: "invoiceCode is required" }, 400);
-
-    const exists = await PurchaseInvoice.findOne({ workspaceId, invoiceCode }).select("_id");
-    if (exists) return sendFail(res, { invoiceCode: "Invoice code already exists" }, 409);
-
     const creatorName = await ensureUserName(req);
     if (!creatorName) return sendFail(res, { user: "User not found" }, 404);
 
@@ -101,22 +109,46 @@ const createPurchaseDraft = async (req, res) => {
     });
     if (!sup.ok) return sendFail(res, sup.error, 400);
 
-    const inv = await PurchaseInvoice.create({
-      workspaceId,
-      invoiceCode,
-      supplierId: sup.supplierId,
-      supplierName: sup.supplierName,
-      notes: norm(req.body.notes),
-      status: "draft",
-      createdByUserId: req.user.userId,
-      createdByName: creatorName,
-      items: [],
-      subtotal: 0,
-      totalAmount: 0,
-      totalItemsQty: 0,
-    });
+    let lastDuplicateError = null;
 
-    return sendSuccess(res, { invoice: clean(inv, { withItems: true }) }, 201);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const invoiceCode = await getNextNumericInvoiceCode({ Model: PurchaseInvoice, workspaceId });
+
+      try {
+        const inv = await PurchaseInvoice.create({
+          workspaceId,
+          invoiceCode,
+          supplierId: sup.supplierId,
+          supplierName: sup.supplierName,
+          notes: norm(req.body.notes),
+          status: "draft",
+          createdByUserId: req.user.userId,
+          createdByName: creatorName,
+          items: [],
+          subtotal: 0,
+          totalAmount: 0,
+          totalItemsQty: 0,
+        });
+
+        return sendSuccess(res, { invoice: clean(inv, { withItems: true }) }, 201);
+      } catch (e) {
+        if (e?.code === 11000) {
+          lastDuplicateError = e;
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (lastDuplicateError) {
+      return sendFail(
+        res,
+        { invoiceCode: "تعذر توليد كود فاتورة غير مكرر، حاول مرة أخرى" },
+        409
+      );
+    }
+
+    return sendError(res, "تعذر إنشاء فاتورة الشراء", 500);
   } catch (error) {
     if (error?.code === 11000) return sendFail(res, { invoiceCode: "Invoice code already exists" }, 409);
     if (error?.name === "ValidationError") return sendFail(res, handleValidationError(error), 400);
@@ -258,31 +290,40 @@ const getPurchaseInvoiceById = async (req, res) => {
     const inv = await PurchaseInvoice.findOne({ _id: id, workspaceId });
     if (!inv) return sendFail(res, { id: "Invoice not found" }, 404);
 
+    await hydrateMissingItemSalePrices(inv, workspaceId);
+
     return sendSuccess(res, { invoice: clean(inv, { withItems: true }) });
   } catch (error) {
     return sendError(res, error.message, 500);
   }
 };
 
-const createProductFromNewProduct = async ({ workspaceId, newProduct, purchasePriceFallback }) => {
-  const allowed = ["id", "name", "category", "salePrice", "minStock"];
+const createProductFromNewProduct = async ({
+  workspaceId,
+  newProduct,
+  purchasePriceFallback,
+  salePriceFallback,
+  baseProduct,
+}) => {
+  const allowed = ["id", "name", "category", "purchasePrice", "salePrice", "minStock"];
   const extra = Object.keys(newProduct || {}).find((k) => !allowed.includes(k));
   if (extra) return { ok: false, error: { message: `newProduct field '${extra}' is not allowed` } };
 
   const id = norm(newProduct.id);
-  const name = norm(newProduct.name);
-  const category = norm(newProduct.category);
-  const salePrice = Number(newProduct.salePrice);
-  const minStock = newProduct.minStock == null ? 0 : Number(newProduct.minStock);
+  const name = norm(newProduct.name) || norm(baseProduct?.name);
+  const category = norm(newProduct.category) || norm(baseProduct?.category);
+  const salePriceRaw = newProduct.salePrice ?? salePriceFallback;
+  const purchasePriceRaw = newProduct.purchasePrice ?? purchasePriceFallback;
+  const salePrice = Number(salePriceRaw);
+  const minStock = newProduct.minStock == null ? Number(baseProduct?.minStock || 0) : Number(newProduct.minStock);
+  const pp = Number(purchasePriceRaw);
 
   if (!id) return { ok: false, error: { id: "newProduct.id is required" } };
   if (!name) return { ok: false, error: { name: "newProduct.name is required" } };
   if (!category) return { ok: false, error: { category: "newProduct.category is required" } };
+  if (!Number.isFinite(pp) || pp < 0) return { ok: false, error: { purchasePrice: "purchasePrice must be >= 0 to create new product" } };
   if (!Number.isFinite(salePrice) || salePrice < 0) return { ok: false, error: { salePrice: "newProduct.salePrice must be >= 0" } };
   if (!Number.isFinite(minStock) || !Number.isInteger(minStock) || minStock < 0) return { ok: false, error: { minStock: "newProduct.minStock must be an integer >= 0" } };
-
-  const pp = Number(purchasePriceFallback);
-  if (!Number.isFinite(pp) || pp < 0) return { ok: false, error: { purchasePrice: "purchasePrice must be >= 0 to create new product" } };
 
   const exists = await Product.findOne({ workspaceId, id }).select("_id");
   if (exists) return { ok: false, error: { id: "Product ID already exists" } };
@@ -292,13 +333,60 @@ const createProductFromNewProduct = async ({ workspaceId, newProduct, purchasePr
     id,
     name,
     category,
-    purchasePrice: pp,
-    salePrice,
+    purchasePrice: round2(pp),
+    salePrice: round2(salePrice),
     minStock,
     quantity: 0,
   });
 
   return { ok: true, product: created };
+};
+
+const readNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : Number.NaN;
+};
+
+const hydrateMissingItemSalePrices = async (inv, workspaceId) => {
+  if (!inv?.items?.length) return inv;
+
+  const missingIds = [
+    ...new Set(
+      inv.items
+        .filter((it) => it.salePriceAtPurchase === null || it.salePriceAtPurchase === undefined)
+        .map((it) => String(it.productId || ""))
+        .filter(Boolean)
+    ),
+  ];
+
+  if (missingIds.length === 0) return inv;
+
+  const products = await Product.find({ workspaceId, id: { $in: missingIds } })
+    .select("id salePrice")
+    .lean();
+  const salePriceMap = new Map(products.map((p) => [String(p.id), Number(p.salePrice || 0)]));
+
+  let changed = false;
+  for (const it of inv.items) {
+    if (it.salePriceAtPurchase !== null && it.salePriceAtPurchase !== undefined) continue;
+
+    const fallbackSalePrice =
+      it.newSalePrice !== null && it.newSalePrice !== undefined
+        ? Number(it.newSalePrice)
+        : salePriceMap.get(String(it.productId));
+
+    if (Number.isFinite(fallbackSalePrice) && fallbackSalePrice >= 0) {
+      it.salePriceAtPurchase = round2(fallbackSalePrice);
+      changed = true;
+    }
+  }
+
+  if (changed && inv.status === "draft") {
+    await inv.save().catch(() => {});
+  }
+
+  return inv;
 };
 
 // POST /api/purchases/:id/items
@@ -309,12 +397,26 @@ const addPurchaseItem = async (req, res) => {
 
     if (!mongoose.Types.ObjectId.isValid(invoiceId)) return sendFail(res, { id: "Invalid invoice id" }, 400);
 
-    const allowed = ["productId", "id", "name", "quantity", "purchasePrice", "newProduct"];
+    const allowed = [
+      "productId",
+      "id",
+      "name",
+      "quantity",
+      "purchasePrice",
+      "newSalePrice",
+      "priceMode",
+      "newProduct",
+    ];
     const extra = Object.keys(req.body || {}).find((k) => !allowed.includes(k));
     if (extra) return sendFail(res, { message: `Field '${extra}' is not allowed` }, 400);
 
     const qty = Number(req.body.quantity);
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) return sendFail(res, { quantity: "quantity must be a positive integer" }, 400);
+
+    const requestedPriceMode = norm(req.body.priceMode || "same");
+    if (!["same", "new_product", "merge_update"].includes(requestedPriceMode)) {
+      return sendFail(res, { priceMode: "priceMode must be same, new_product, or merge_update" }, 400);
+    }
 
     const pid = norm(req.body.productId || req.body.id);
     const pname = req.body.name ? norm(req.body.name) : "";
@@ -325,14 +427,18 @@ const addPurchaseItem = async (req, res) => {
     if (inv.status !== "draft") return sendFail(res, { status: "You can only edit items on draft invoices" }, 403);
 
     let product = null;
+    let baseProduct = null;
 
     if (pid) {
       product = await Product.findOne({ workspaceId, id: pid });
+      baseProduct = product;
     } else if (pname) {
       const matches = await Product.find({ workspaceId, name: { $regex: `^${escapeRegex(pname)}$`, $options: "i" } }).limit(5);
 
-      if (matches.length === 1) product = matches[0];
-      else if (matches.length > 1) {
+      if (matches.length === 1) {
+        product = matches[0];
+        baseProduct = product;
+      } else if (matches.length > 1) {
         return sendFail(
           res,
           { message: "Multiple products have the same name. Please choose one by productId.", candidates: matches.map((p) => ({ id: p.id, name: p.name })) },
@@ -342,17 +448,92 @@ const addPurchaseItem = async (req, res) => {
     }
 
     if (!product && req.body.newProduct) {
-      const created = await createProductFromNewProduct({ workspaceId, newProduct: req.body.newProduct, purchasePriceFallback: req.body.purchasePrice });
+      const created = await createProductFromNewProduct({
+        workspaceId,
+        newProduct: req.body.newProduct,
+        purchasePriceFallback: req.body.purchasePrice,
+        salePriceFallback: req.body.newSalePrice,
+      });
       if (!created.ok) return sendFail(res, created.error, 400);
       product = created.product;
+      baseProduct = null;
     }
 
     if (!product) return sendFail(res, { product: "Product not found" }, 404);
 
-    const pp = req.body.purchasePrice == null ? Number(product.purchasePrice) : Number(req.body.purchasePrice);
+    const purchasePriceInput = readNumberOrNull(req.body.purchasePrice);
+    if (Number.isNaN(purchasePriceInput)) return sendFail(res, { purchasePrice: "purchasePrice must be a non-negative number" }, 400);
+
+    const newSalePriceInput = readNumberOrNull(req.body.newSalePrice);
+    if (Number.isNaN(newSalePriceInput)) return sendFail(res, { newSalePrice: "newSalePrice must be a non-negative number" }, 400);
+
+    const pp = purchasePriceInput == null ? Number(product.purchasePrice) : Number(purchasePriceInput);
     if (!Number.isFinite(pp) || pp < 0) return sendFail(res, { purchasePrice: "purchasePrice must be a non-negative number" }, 400);
 
-    const sameLine = inv.items.find((it) => String(it.productId) === String(product.id) && Number(it.purchasePrice) === pp);
+    const oldPurchasePrice = baseProduct ? Number(baseProduct.purchasePrice || 0) : null;
+    const oldSalePrice = baseProduct ? Number(baseProduct.salePrice || 0) : null;
+    const salePriceForComparison = newSalePriceInput == null ? Number(product.salePrice || 0) : Number(newSalePriceInput);
+    if (!Number.isFinite(salePriceForComparison) || salePriceForComparison < 0) {
+      return sendFail(res, { newSalePrice: "newSalePrice must be a non-negative number" }, 400);
+    }
+
+    const hasExistingProductPriceChange =
+      Boolean(baseProduct) &&
+      (round2(pp) !== round2(oldPurchasePrice) || round2(salePriceForComparison) !== round2(oldSalePrice));
+
+    if (hasExistingProductPriceChange && requestedPriceMode === "same") {
+      return sendFail(
+        res,
+        { priceMode: "يجب اختيار طريقة التعامل مع السعر الجديد قبل إضافة الصنف" },
+        400
+      );
+    }
+
+    let priceModeToStore = requestedPriceMode;
+
+    if (!baseProduct && req.body.newProduct) {
+      priceModeToStore = "new_product";
+    }
+
+    if (requestedPriceMode === "merge_update" && !baseProduct) {
+      return sendFail(res, { priceMode: "merge_update is allowed only for existing products" }, 400);
+    }
+
+    if (requestedPriceMode === "merge_update") {
+      if (newSalePriceInput == null) {
+        return sendFail(res, { newSalePrice: "newSalePrice is required when priceMode=merge_update" }, 400);
+      }
+    }
+
+    if (requestedPriceMode === "new_product" && baseProduct) {
+      const created = await createProductFromNewProduct({
+        workspaceId,
+        newProduct: req.body.newProduct || {},
+        purchasePriceFallback: pp,
+        salePriceFallback: salePriceForComparison,
+        baseProduct,
+      });
+      if (!created.ok) return sendFail(res, created.error, 400);
+      product = created.product;
+      priceModeToStore = "new_product";
+    }
+
+    const itemSalePrice = priceModeToStore === "merge_update" ? round2(salePriceForComparison) : null;
+    const salePriceAtPurchase = round2(
+      priceModeToStore === "merge_update"
+        ? salePriceForComparison
+        : Number(product.salePrice || 0)
+    );
+
+    const sameLine = inv.items.find(
+      (it) =>
+        String(it.productId) === String(product.id) &&
+        Number(it.purchasePrice) === round2(pp) &&
+        Number(it.salePriceAtPurchase || 0) === Number(salePriceAtPurchase || 0) &&
+        String(it.priceMode || "same") === String(priceModeToStore) &&
+        Number(it.newSalePrice || 0) === Number(itemSalePrice || 0)
+    );
+
     if (sameLine) {
       sameLine.quantity = Number(sameLine.quantity) + qty;
     } else {
@@ -361,7 +542,12 @@ const addPurchaseItem = async (req, res) => {
         productName: product.name,
         productCategory: product.category || "",
         purchasePrice: round2(pp),
+        salePriceAtPurchase,
         quantity: qty,
+        priceMode: priceModeToStore,
+        newSalePrice: itemSalePrice,
+        oldPurchasePriceSnapshot: oldPurchasePrice == null ? null : round2(oldPurchasePrice),
+        oldSalePriceSnapshot: oldSalePrice == null ? null : round2(oldSalePrice),
       });
     }
 
@@ -370,6 +556,7 @@ const addPurchaseItem = async (req, res) => {
 
     return sendSuccess(res, { invoice: clean(inv, { withItems: true }) });
   } catch (error) {
+    if (error?.code === 11000) return sendFail(res, { id: "Product ID already exists" }, 409);
     if (error?.name === "ValidationError") return sendFail(res, handleValidationError(error), 400);
     return sendError(res, error.message, 500);
   }
@@ -469,11 +656,28 @@ const finalizePurchaseInvoice = async (req, res) => {
     try {
       for (const it of inv.items) {
         const q = Number(it.quantity);
+        const isMergeUpdate = String(it.priceMode || "same") === "merge_update";
+
+        const before = await Product.findOne({ workspaceId, id: String(it.productId) }).select(
+          "id name category quantity purchasePrice salePrice"
+        );
+
+        if (!before) throw new Error(`PRODUCT_NOT_FOUND:${it.productId}`);
+
+        const update = isMergeUpdate
+          ? {
+              $inc: { quantity: q },
+              $set: {
+                purchasePrice: round2(it.purchasePrice),
+                salePrice: round2(it.newSalePrice),
+              },
+            }
+          : { $inc: { quantity: q } };
 
         const p = await Product.findOneAndUpdate(
           { workspaceId, id: String(it.productId) },
-          { $inc: { quantity: q } },
-          { new: true }
+          update,
+          { new: true, runValidators: true }
         ).select("id name category quantity");
 
         if (!p) throw new Error(`PRODUCT_NOT_FOUND:${it.productId}`);
@@ -500,11 +704,25 @@ const finalizePurchaseInvoice = async (req, res) => {
         });
 
         movementIds.push(String(mv._id));
-        applied.push({ productId: String(it.productId), qty: q });
+        applied.push({
+          productId: String(it.productId),
+          qty: q,
+          priceMode: isMergeUpdate ? "merge_update" : "same",
+          oldPurchasePrice: Number(before.purchasePrice || 0),
+          oldSalePrice: Number(before.salePrice || 0),
+        });
       }
     } catch (e) {
       if (movementIds.length > 0) await StockMovement.deleteMany({ _id: { $in: movementIds } }).catch(() => {});
-      for (const a of applied) await Product.updateOne({ workspaceId, id: a.productId }, { $inc: { quantity: -a.qty } }).catch(() => {});
+      for (const a of applied) {
+        const rollbackUpdate = a.priceMode === "merge_update"
+          ? {
+              $inc: { quantity: -a.qty },
+              $set: { purchasePrice: a.oldPurchasePrice, salePrice: a.oldSalePrice },
+            }
+          : { $inc: { quantity: -a.qty } };
+        await Product.updateOne({ workspaceId, id: a.productId }, rollbackUpdate).catch(() => {});
+      }
 
       const msg = String(e?.message || "");
       if (msg.startsWith("PRODUCT_NOT_FOUND:")) return sendFail(res, { productId: `Product not found: ${msg.split(":")[1]}` }, 404);
@@ -520,7 +738,15 @@ const finalizePurchaseInvoice = async (req, res) => {
       await inv.save();
     } catch (e) {
       if (movementIds.length > 0) await StockMovement.deleteMany({ _id: { $in: movementIds } }).catch(() => {});
-      for (const a of applied) await Product.updateOne({ workspaceId, id: a.productId }, { $inc: { quantity: -a.qty } }).catch(() => {});
+      for (const a of applied) {
+        const rollbackUpdate = a.priceMode === "merge_update"
+          ? {
+              $inc: { quantity: -a.qty },
+              $set: { purchasePrice: a.oldPurchasePrice, salePrice: a.oldSalePrice },
+            }
+          : { $inc: { quantity: -a.qty } };
+        await Product.updateOne({ workspaceId, id: a.productId }, rollbackUpdate).catch(() => {});
+      }
       return sendError(res, e.message, 500);
     }
 

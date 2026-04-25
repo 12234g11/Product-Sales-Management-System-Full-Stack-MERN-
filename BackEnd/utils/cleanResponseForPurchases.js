@@ -35,7 +35,12 @@ const cleanOne = (inv, { withItems }) => {
       productName: it.productName,
       productCategory: it.productCategory || "",
       purchasePrice: it.purchasePrice,
+      salePriceAtPurchase: it.salePriceAtPurchase ?? null,
       quantity: it.quantity,
+      priceMode: it.priceMode || "same",
+      newSalePrice: it.newSalePrice ?? null,
+      oldPurchasePriceSnapshot: it.oldPurchasePriceSnapshot ?? null,
+      oldSalePriceSnapshot: it.oldSalePriceSnapshot ?? null,
     })),
   };
 };

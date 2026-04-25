@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FiPlusCircle, FiX } from "react-icons/fi";
 import { productsApi } from "../../products/api/productsApi";
 import { formatMoney, formatNumber } from "../utils/salesFormatters";
 
@@ -140,17 +141,18 @@ export default function ProductQuickAdd({ disabled, busy, onAdd, onError }) {
       <div className="card-body">
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div>
-            <h5 className="m-0">إضافة صنف</h5>
+            <h5 className="m-0 d-inline-flex align-items-center gap-2"><FiPlusCircle aria-hidden="true" />إضافة صنف</h5>
             <div className="small text-secondary mt-1">
               ابحث بالاسم أو الكود ثم أضف الكمية.
             </div>
           </div>
           <button
             type="button"
-            className="btn btn-outline-secondary btn-sm"
+            className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
             onClick={clear}
             disabled={disabled || busy}
           >
+            <FiX aria-hidden="true" />
             مسح
           </button>
         </div>
@@ -242,9 +244,10 @@ export default function ProductQuickAdd({ disabled, busy, onAdd, onError }) {
             </div>
             <div className="col-12 col-md-6">
               <button
-                className="btn btn-primary w-100"
+                className="btn btn-primary w-100 d-inline-flex align-items-center justify-content-center gap-1"
                 disabled={disabled || busy || !selected}
               >
+                <FiPlusCircle aria-hidden="true" />
                 {busy ? "جاري الإضافة..." : "إضافة"}
               </button>
             </div>
